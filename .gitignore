@@ -2,6 +2,8 @@
 # Dependencies
 node_modules/
 
+tmdb_movies_2021_2025.parquet
+
 # Logs
 *.log
 
