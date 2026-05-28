@@ -28,13 +28,8 @@ class RAGRequest(BaseModel):
     session_id: str | None = Field(None, description="Session ID for memory. Omit for stateless.")
 
 
-class RetrievedMovie(BaseModel):
-    title: str
-    overview: str
-    genres: list[str]
-    vote_average: float | None
-    release_date: str | None
-    poster_url: str | None
+class RetrievedChunk(BaseModel):
+    content: str
     relevance_rank: int = Field(..., description="1-based rank from the vector search")
     relevance_score: float = Field(..., description="Normalised similarity score [0-1]")
 
@@ -95,7 +90,7 @@ class RAGChatResponse(BaseModel):
     response: str
     session_id: str | None = None
     debug: RAGDebugInfo
-    results: list[RetrievedMovie]
+    results: list[RetrievedChunk]
 
 
 # ── History schemas ───────────────────────────────────────────────────────────
@@ -122,7 +117,7 @@ class CacheEntry(BaseModel):
     original_retrieval_latency_ms: float | None
     original_llm_latency_ms: float | None
     original_total_latency_ms: float | None
-    result_count: int = Field(..., description="Number of movies stored in this entry")
+    result_count: int = Field(..., description="Number of chunks stored in this entry")
     response_preview: str = Field(..., description="First 120 chars of the cached response")
 
 

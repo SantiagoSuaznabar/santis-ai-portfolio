@@ -17,7 +17,7 @@ import os
 import json
 import hashlib
 from datetime import datetime, timezone
-
+from app.services.logger_service import logger
 import numpy as np
 from dotenv import load_dotenv
 from redis import Redis
@@ -88,12 +88,15 @@ class RedisService:
                 scanned += 1
                 entry = json.loads(raw)
                 score = _cosine_similarity(query_embedding, entry["embedding"])
+                logger.debug(f"Vs [{key[-8:]}] '{entry['query']}' -> Score: {score:.4f}")
                 if score > best_score:
                     best_score = score
                     best_entry = entry
                     best_key   = key
             if cursor == 0:
                 break
+        
+        logger.info(f"Cache scan complete. Checked {scanned} entries. Best score: {best_score:.4f}")
 
         base = {
             "hit":             False,
@@ -145,6 +148,7 @@ class RedisService:
         Store a cache entry. Returns the Redis key on success.
         Raises on any error (caller decides how to handle/surface it).
         """
+        logger.debug(f"Attempting to cache response for: '{query}'")
         embedding = await self._embed(query)
         key = self._make_key(query)
         entry = {
@@ -160,6 +164,7 @@ class RedisService:
             },
         }
         self.redis.setex(key, CACHE_TTL_SECONDS, json.dumps(entry))
+        logger.info(f"Successfully cached under key: {key}")
         return key
 
     def list_all(self) -> list[dict]:

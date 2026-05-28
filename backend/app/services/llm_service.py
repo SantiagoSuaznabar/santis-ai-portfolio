@@ -3,13 +3,13 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
+from app.services.logger_service import logger
 
 load_dotenv()
 
-RAG_SYSTEM_PROMPT = """You are a helpful movie recommendation assistant with access to a curated database of films.
-You will be given retrieved movie context and the conversation history, then the user's latest question.
+RAG_SYSTEM_PROMPT = """You are a helpful assistant and an expert on the book 'Three Days of Happiness'.
+You will be given retrieved passages from the book and the conversation history, followed by the user's question.
 Use ONLY the provided context to answer. If the context doesn't contain enough information, say so honestly.
-When you mention a movie title, format it in bold.
 Keep answers concise but informative."""
 
 
@@ -55,20 +55,18 @@ class LLMService:
 
         history items: {role: "user"|"assistant", content: str}
         """
+        logger.info(f"Assembling prompt for LLM with {len(context_docs)} context chunks.")
         context_parts = []
         for i, doc in enumerate(context_docs, 1):
             meta = doc.get("metadata", {})
-            genres = ", ".join(meta.get("genres", [])) or "N/A"
-            context_parts.append(
-                f"[{i}] {doc['page_content']}\n"
-                f"    Genres: {genres} | Rating: {meta.get('vote_average', 'N/A')} "
-                f"| Release: {meta.get('release_date', 'N/A')}"
-            )
-        context_text = "\n\n".join(context_parts)
+            idx = meta.get("chunk_index", "Unknown Chapter")
+            context_parts.append(f"[{i}] [Chunk Index: {idx}]\n{doc['page_content']}")
+            context_text = "\n\n".join(context_parts)
 
         messages = [SystemMessage(content=RAG_SYSTEM_PROMPT)]
 
         if history:
+            logger.info(f"Injecting {len(history)} previous messages as conversation history.")
             messages += self._build_history_messages(history)
 
         messages.append(
@@ -78,6 +76,8 @@ class LLMService:
         )
 
         chain = self.llm | self.output_parser
+        logger.debug("Awaiting LLM generation...")
+        logger.info("LLM generation complete.")
         return await chain.ainvoke(messages)
 
 

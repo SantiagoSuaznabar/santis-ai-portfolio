@@ -4,10 +4,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
+from app.services.logger_service import logger
+
 
 from app.models.schemas import (
     ChatRequest, ChatResponse,
-    RAGRequest, RAGChatResponse, RAGDebugInfo, RetrievedMovie,
+    RAGRequest, RAGChatResponse, RAGDebugInfo, RetrievedChunk,
     CacheDebugInfo, CacheMissCandidate,
     SessionCreateResponse, SessionDeleteResponse,
     SessionHistoryResponse, HistoryMessage,
@@ -109,6 +111,9 @@ async def delete_cache_entry(cache_key: str):
 
 @app.post("/api/chat/rag", response_model=RAGChatResponse)
 async def rag_chat(request: RAGRequest):
+    logger.info(f"--- New Request | Session: {request.session_id} ---")
+    logger.info(f"User Message: '{request.message}'")
+
     total_start = time.perf_counter()
 
     history: list[dict] = []
@@ -129,8 +134,9 @@ async def rag_chat(request: RAGRequest):
             cache_skip_reason = f"redis_unavailable: {e}"
 
     if cache_lookup and cache_lookup["hit"]:
+        logger.info(f"Cache HIT! Score: {cache_lookup['similarity_score']}. Returning cached response.")
         total_ms      = (time.perf_counter() - total_start) * 1000
-        cached_movies = [RetrievedMovie(**m) for m in cache_lookup["results"]]
+        cached_chunks = [RetrievedChunk(**m) for m in cache_lookup["results"]]
 
         if request.session_id:
             session_store.add_message(request.session_id, "user", request.message)
@@ -142,7 +148,7 @@ async def rag_chat(request: RAGRequest):
             debug=RAGDebugInfo(
                 query=request.message,
                 top_k=TOP_K,
-                retrieved_count=len(cached_movies),
+                retrieved_count=len(cached_chunks),
                 score_threshold=SCORE_THRESHOLD,
                 retrieval_mode="hybrid",
                 retrieval_latency_ms=0.0,
@@ -162,8 +168,9 @@ async def rag_chat(request: RAGRequest):
                     original_total_latency_ms=cache_lookup["original_total_latency_ms"],
                 ),
             ),
-            results=cached_movies,
+            results=cached_chunks,
         )
+    logger.info("Cache MISS. Proceeding to Vector Store.")
 
     t0 = time.perf_counter()
     try:
@@ -188,7 +195,7 @@ async def rag_chat(request: RAGRequest):
     if not docs:
         total_ms = (time.perf_counter() - total_start) * 1000
         return RAGChatResponse(
-            response="I couldn't find any relevant movies for your query.",
+            response="I couldn't find any relevant passages from the book for your query.",
             session_id=request.session_id,
             debug=RAGDebugInfo(
                 query=request.message,
@@ -216,16 +223,13 @@ async def rag_chat(request: RAGRequest):
     llm_ms    = (time.perf_counter() - t0) * 1000
     total_ms  = (time.perf_counter() - total_start) * 1000
 
-    retrieved_movies = [
-        RetrievedMovie(
-            title=doc["metadata"].get("title", "Unknown"),
-            overview=doc["overview"],
-            genres=doc["metadata"].get("genres", []),
-            vote_average=doc["metadata"].get("vote_average"),
-            release_date=str(doc["metadata"].get("release_date", "")) or None,
-            poster_url=doc["metadata"].get("poster_url"),
-            relevance_rank=doc["relevance_rank"],
-            relevance_score=doc["relevance_score"],
+    retrieved_chunks = [
+        RetrievedChunk(
+        content=doc["page_content"],
+        chunk_index=doc["metadata"].get("chunk_index"),
+        #page_number=doc["metadata"].get("page_number"),
+        relevance_rank=doc["relevance_rank"],
+        relevance_score=doc["relevance_score"],
         )
         for doc in docs
     ]
@@ -236,7 +240,7 @@ async def rag_chat(request: RAGRequest):
             stored_key = await redis_service.set(
                 query=request.message,
                 response=ai_response,
-                results=[m.model_dump() for m in retrieved_movies],
+                results=[m.model_dump() for m in retrieved_chunks],
                 retrieval_latency_ms=round(retrieval_ms, 2),
                 llm_latency_ms=round(llm_ms, 2),
                 total_latency_ms=round(total_ms, 2),
@@ -255,7 +259,7 @@ async def rag_chat(request: RAGRequest):
         debug=RAGDebugInfo(
             query=request.message,
             top_k=TOP_K,
-            retrieved_count=len(retrieved_movies),
+            retrieved_count=len(retrieved_chunks),
             score_threshold=SCORE_THRESHOLD,
             retrieval_mode="hybrid",
             retrieval_latency_ms=round(retrieval_ms, 2),
@@ -263,7 +267,7 @@ async def rag_chat(request: RAGRequest):
             total_latency_ms=round(total_ms, 2),
             cache=_miss_cache_info(write_status),
         ),
-        results=retrieved_movies,
+        results=retrieved_chunks,
     )
 
 

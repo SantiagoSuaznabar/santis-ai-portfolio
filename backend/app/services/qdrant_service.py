@@ -3,10 +3,11 @@ from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_qdrant import QdrantVectorStore, FastEmbedSparse, RetrievalMode
+from app.services.logger_service import logger
 
 load_dotenv()
 
-SCORE_THRESHOLD = 0.7
+SCORE_THRESHOLD = 0.65
 
 
 class QdrantService:
@@ -21,7 +22,7 @@ class QdrantService:
         self.sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 
         self.client = QdrantClient(url=qdrant_url)
-        self.collection_name = "movies_hybrid"
+        self.collection_name = "hybrid_three_days_of_happiness"
 
     def get_vector_store(self) -> QdrantVectorStore:
         return QdrantVectorStore(
@@ -42,6 +43,7 @@ class QdrantService:
         Returns a list of dicts with keys:
           page_content, overview, metadata, relevance_rank, relevance_score
         """
+        logger.debug(f"Executing Qdrant search for query: '{query}'")
         vector_store = self.get_vector_store()
 
         scored_docs = vector_store.similarity_search_with_relevance_scores(query, k=k)
@@ -50,20 +52,21 @@ class QdrantService:
         rank = 1
         for doc, score in scored_docs:
             if score < SCORE_THRESHOLD:
+                logger.debug(f"Filtered out chunk (Score: {score:.4f} < Threshold: {SCORE_THRESHOLD})")
                 continue
 
+            logger.debug(f"Retrieved chunk (Score: {score:.4f}) | Preview: {doc.page_content[:50]}...")
             content = doc.page_content
-            overview = content.split("\nOverview: ", 1)[1] if "\nOverview: " in content else ""
 
             results.append({
                 "page_content": content,
-                "overview": overview,
                 "metadata": doc.metadata,
                 "relevance_rank": rank,
                 "relevance_score": round(score, 4),
             })
             rank += 1
-
+            
+        logger.info(f"Qdrant retrieved {len(results)} valid chunks.")
         return results
 
 
