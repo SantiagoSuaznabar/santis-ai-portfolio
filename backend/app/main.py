@@ -1,10 +1,13 @@
 import time
 import json
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 from app.services.logger_service import logger
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 
 from app.models.schemas import (
@@ -21,12 +24,17 @@ from app.services.redis_service import redis_service, _cosine_similarity
 from app.services.session_store import session_store
 
 load_dotenv()
+redis_url = os.getenv("REDIS_URL", "memory://")
+limiter = Limiter(key_func=get_remote_address, storage_uri=redis_url)
 
 app = FastAPI(
     title="AI Portfolio Backend",
     description="RAG chatbot — hybrid search + semantic cache",
     version="1.0.0",
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -110,24 +118,25 @@ async def delete_cache_entry(cache_key: str):
 
 
 @app.post("/api/chat/rag", response_model=RAGChatResponse)
-async def rag_chat(request: RAGRequest):
-    logger.info(f"--- New Request | Session: {request.session_id} ---")
-    logger.info(f"User Message: '{request.message}'")
+@limiter.limit("5/minute")
+async def rag_chat(request: Request, body: RAGRequest):
+    logger.info(f"--- New Request | Session: {body.session_id} ---")
+    logger.info(f"User Message: '{body.message}'")
 
     total_start = time.perf_counter()
 
     # 1. Fetch History
     history: list[dict] = []
-    if request.session_id:
-        if not session_store.session_exists(request.session_id):
+    if body.session_id:
+        if not session_store.session_exists(body.session_id):
             raise HTTPException(status_code=404, detail="Session not found. Create via POST /api/session")
-        history = session_store.get_history_for_llm(request.session_id)
+        history = session_store.get_history_for_llm(body.session_id)
 
     # 2. Reformulate Query
-    search_query = request.message
+    search_query = body.message
     if history:
-        search_query = await llm_service.reformulate_query(request.message, history)
-        logger.info(f"Reformulated Query: '{request.message}' -> '{search_query}'")
+        search_query = await llm_service.reformulate_query(body.message, history)
+        logger.info(f"Reformulated Query: '{body.message}' -> '{search_query}'")
 
     # 3. Check Cache (using reformulated query)
     cache_lookup: dict | None = None
@@ -145,13 +154,13 @@ async def rag_chat(request: RAGRequest):
         total_ms      = (time.perf_counter() - total_start) * 1000
         cached_chunks = [RetrievedChunk(**m) for m in cache_lookup["results"]]
 
-        if request.session_id:
-            session_store.add_message(request.session_id, "user", request.message)
-            session_store.add_message(request.session_id, "assistant", cache_lookup["response"])
+        if body.session_id:
+            session_store.add_message(body.session_id, "user", body.message)
+            session_store.add_message(body.session_id, "assistant", cache_lookup["response"])
 
         return RAGChatResponse(
             response=cache_lookup["response"],
-            session_id=request.session_id,
+            session_id=body.session_id,
             debug=RAGDebugInfo(
                 query=search_query,
                 top_k=TOP_K,
@@ -208,7 +217,7 @@ async def rag_chat(request: RAGRequest):
         total_ms = (time.perf_counter() - total_start) * 1000
         return RAGChatResponse(
             response="I couldn't find any relevant passages from the book for your query.",
-            session_id=request.session_id,
+            session_id=body.session_id,
             debug=RAGDebugInfo(
                 query=search_query,
                 top_k=TOP_K,
@@ -228,7 +237,7 @@ async def rag_chat(request: RAGRequest):
     try:
         logger.info("Generating response with LLM...")
         ai_response = await llm_service.get_rag_response(
-            question=request.message,
+            question=body.message,
             context_docs=docs,
             history=history or None,
         )
@@ -268,106 +277,15 @@ async def rag_chat(request: RAGRequest):
         write_status = f"error:{e}"
 
     # 8. Update Session History
-    if request.session_id:
-        session_store.add_message(request.session_id, "user", request.message)
-        session_store.add_message(request.session_id, "assistant", ai_response)
+    if body.session_id:
+        session_store.add_message(body.session_id, "user", body.message)
+        session_store.add_message(body.session_id, "assistant", ai_response)
 
     return RAGChatResponse(
         response=ai_response,
-        session_id=request.session_id,
+        session_id=body.session_id,
         debug=RAGDebugInfo(
             query=search_query,
-            top_k=TOP_K,
-            retrieved_count=len(retrieved_chunks),
-            score_threshold=SCORE_THRESHOLD,
-            retrieval_mode="hybrid",
-            retrieval_latency_ms=round(retrieval_ms, 2),
-            llm_latency_ms=round(llm_ms, 2),
-            total_latency_ms=round(total_ms, 2),
-            cache=_miss_cache_info(write_status),
-        ),
-        results=retrieved_chunks,
-    )
-
-    def _miss_cache_info(write_status: str) -> CacheDebugInfo:
-        best = None
-        if cache_lookup and cache_lookup.get("best_candidate"):
-            best = CacheMissCandidate(**cache_lookup["best_candidate"])
-        return CacheDebugInfo(
-            hit=False,
-            threshold=cache_lookup["threshold"] if cache_lookup else None,
-            entries_scanned=cache_lookup["entries_scanned"] if cache_lookup else None,
-            best_candidate=best,
-            skipped_reason=cache_skip_reason,
-            write_status=write_status,
-        )
-
-    if not docs:
-        total_ms = (time.perf_counter() - total_start) * 1000
-        return RAGChatResponse(
-            response="I couldn't find any relevant passages from the book for your query.",
-            session_id=request.session_id,
-            debug=RAGDebugInfo(
-                query=request.message,
-                top_k=TOP_K,
-                retrieved_count=0,
-                score_threshold=SCORE_THRESHOLD,
-                retrieval_mode="hybrid",
-                retrieval_latency_ms=round(retrieval_ms, 2),
-                llm_latency_ms=0.0,
-                total_latency_ms=round(total_ms, 2),
-                cache=_miss_cache_info("skipped_no_results"),
-            ),
-            results=[],
-        )
-
-    t0 = time.perf_counter()
-    try:
-        ai_response = await llm_service.get_rag_response(
-            question=request.message,
-            context_docs=docs,
-            history=history or None,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"LLM error: {e}")
-    llm_ms    = (time.perf_counter() - t0) * 1000
-    total_ms  = (time.perf_counter() - total_start) * 1000
-
-    retrieved_chunks = [
-        RetrievedChunk(
-        content=doc["page_content"],
-        chunk_index=doc["metadata"].get("chunk_index"),
-        #page_number=doc["metadata"].get("page_number"),
-        relevance_rank=doc["relevance_rank"],
-        relevance_score=doc["relevance_score"],
-        )
-        for doc in docs
-    ]
-
-    write_status = "skipped_has_history" if history else None
-    if not history:
-        try:
-            stored_key = await redis_service.set(
-                query=request.message,
-                response=ai_response,
-                results=[m.model_dump() for m in retrieved_chunks],
-                retrieval_latency_ms=round(retrieval_ms, 2),
-                llm_latency_ms=round(llm_ms, 2),
-                total_latency_ms=round(total_ms, 2),
-            )
-            write_status = f"stored:{stored_key}"
-        except Exception as e:
-            write_status = f"error:{e}"
-
-    if request.session_id:
-        session_store.add_message(request.session_id, "user", request.message)
-        session_store.add_message(request.session_id, "assistant", ai_response)
-
-    return RAGChatResponse(
-        response=ai_response,
-        session_id=request.session_id,
-        debug=RAGDebugInfo(
-            query=request.message,
             top_k=TOP_K,
             retrieved_count=len(retrieved_chunks),
             score_threshold=SCORE_THRESHOLD,
