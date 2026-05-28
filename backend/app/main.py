@@ -24,6 +24,7 @@ from app.services.llm_service import llm_service
 from app.services.qdrant_service import qdrant_service, SCORE_THRESHOLD
 from app.services.redis_service import redis_service, _cosine_similarity
 from app.services.session_store import session_store
+from app.services.log_capture import capture_logs
 
 load_dotenv()
 redis_url = os.getenv("REDIS_URL", "memory://")
@@ -354,7 +355,7 @@ async def rag_chat_stream(request: Request, body: RAGRequest):
     """
     Streaming version of POST /api/chat/rag.
 
-    Returns Server Sent Events (SSE) with Content-Type: text/event-stream.
+    Returns Server-Sent Events (SSE) with Content-Type: text/event-stream.
     Each event is a JSON object on a `data:` line.
 
     Event sequence
@@ -387,157 +388,183 @@ async def rag_chat_stream(request: Request, body: RAGRequest):
     async def generate():
         total_start = time.perf_counter()
 
-        # 1 & 2 — History + query reformulation
-        try:
-            history, search_query = await _resolve_query(body.message, body.session_id)
-        except HTTPException as exc:
-            yield _sse({"type": "error", "message": exc.detail})
-            return
+        with capture_logs(logger) as log_handler:
 
-        # 3 — Check cache
-        cache_lookup: dict | None = None
-        cache_skip_reason: str | None = None
-        try:
-            cache_lookup = await redis_service.get(search_query)
-        except Exception as e:
-            cache_skip_reason = f"redis_unavailable: {e}"
-            logger.error(f"Redis cache error: {e}")
+            # 1 & 2 — History + query reformulation
+            try:
+                history, search_query = await _resolve_query(body.message, body.session_id)
+            except HTTPException as exc:
+                yield _sse({"type": "error", "message": exc.detail})
+                return
+            for event in log_handler.drain():
+                yield _sse(event)
 
-        # 4 — Cache hit: replay word-by-word
-        if cache_lookup and cache_lookup.get("hit"):
-            logger.info(f"Cache HIT (stream). Score: {cache_lookup['similarity_score']}")
-            cached_chunks = [RetrievedChunk(**m) for m in cache_lookup["results"]]
+            # 3 — Check cache
+            cache_lookup: dict | None = None
+            cache_skip_reason: str | None = None
+            try:
+                cache_lookup = await redis_service.get(search_query)
+            except Exception as e:
+                cache_skip_reason = f"redis_unavailable: {e}"
+                logger.error(f"Redis cache error: {e}")
+            for event in log_handler.drain():
+                yield _sse(event)
 
+            # 4 — Cache hit: replay word-by-word
+            if cache_lookup and cache_lookup.get("hit"):
+                logger.info(f"Cache HIT. Score: {cache_lookup['similarity_score']}")
+                for event in log_handler.drain():
+                    yield _sse(event)
+
+                cached_chunks = [RetrievedChunk(**m) for m in cache_lookup["results"]]
+                yield _sse({
+                    "type":       "meta",
+                    "query":      search_query,
+                    "session_id": body.session_id,
+                    "results":    [c.model_dump() for c in cached_chunks],
+                    "from_cache": True,
+                })
+
+                # Replay cached response word-by-word
+                words = cache_lookup["response"].split(" ")
+                for i, word in enumerate(words):
+                    token = word if i == 0 else f" {word}"
+                    yield _sse({"type": "token", "content": token})
+                    await asyncio.sleep(0)  # yield control to the event loop
+
+                if body.session_id:
+                    session_store.add_message(body.session_id, "user", body.message)
+                    session_store.add_message(body.session_id, "assistant", cache_lookup["response"])
+
+                total_ms = (time.perf_counter() - total_start) * 1000
+                debug = RAGDebugInfo(
+                    query=search_query,
+                    top_k=TOP_K,
+                    retrieved_count=len(cached_chunks),
+                    score_threshold=SCORE_THRESHOLD,
+                    retrieval_mode="hybrid",
+                    retrieval_latency_ms=0.0,
+                    llm_latency_ms=0.0,
+                    total_latency_ms=round(total_ms, 2),
+                    cache=_build_hit_cache_info(cache_lookup),
+                )
+                yield _sse({"type": "done", "debug": debug.model_dump()})
+                return
+
+            logger.info("Cache MISS. Proceeding to Vector Store.")
+            for event in log_handler.drain():
+                yield _sse(event)
+
+            # 5 — Qdrant search
+            t0 = time.perf_counter()
+            try:
+                docs = await qdrant_service.search(search_query, k=TOP_K)
+            except Exception as e:
+                logger.error(f"Vector store error: {e}")
+                for event in log_handler.drain():
+                    yield _sse(event)
+                yield _sse({"type": "error", "message": f"Vector store error: {e}"})
+                return
+            retrieval_ms = (time.perf_counter() - t0) * 1000
+            for event in log_handler.drain():
+                yield _sse(event)
+
+            retrieved_chunks = _map_chunks(docs)
+
+            # Send metadata — frontend can render source cards immediately
             yield _sse({
                 "type":       "meta",
                 "query":      search_query,
                 "session_id": body.session_id,
-                "results":    [c.model_dump() for c in cached_chunks],
-                "from_cache": True,
+                "results":    [c.model_dump() for c in retrieved_chunks],
+                "from_cache": False,
             })
 
-            # Replay cached response word-by-word
-            words = cache_lookup["response"].split(" ")
-            for i, word in enumerate(words):
-                token = word if i == 0 else f" {word}"
-                yield _sse({"type": "token", "content": token})
-                await asyncio.sleep(0)  # yield control to the event loop
+            if not docs:
+                logger.info("No relevant documents found.")
+                for event in log_handler.drain():
+                    yield _sse(event)
+                no_result_msg = "I couldn't find any relevant passages from the book for your query."
+                yield _sse({"type": "token", "content": no_result_msg})
+                total_ms = (time.perf_counter() - total_start) * 1000
+                debug = RAGDebugInfo(
+                    query=search_query,
+                    top_k=TOP_K,
+                    retrieved_count=0,
+                    score_threshold=SCORE_THRESHOLD,
+                    retrieval_mode="hybrid",
+                    retrieval_latency_ms=round(retrieval_ms, 2),
+                    llm_latency_ms=0.0,
+                    total_latency_ms=round(total_ms, 2),
+                    cache=_build_miss_cache_info(cache_lookup, cache_skip_reason, "skipped_no_results"),
+                )
+                yield _sse({"type": "done", "debug": debug.model_dump()})
+                return
 
+            # 6 — Stream LLM tokens
+            #     Drain logs before the first token, then again between tokens
+            #     so service-level logs (e.g. "Assembling prompt...") appear
+            #     before the response starts building.
+            t0 = time.perf_counter()
+            response_parts: list[str] = []
+            try:
+                async for token in llm_service.stream_rag_response(
+                    question=body.message,
+                    context_docs=docs,
+                    history=history or None,
+                ):
+                    # Flush any logs that fired before this token
+                    for event in log_handler.drain():
+                        yield _sse(event)
+                    response_parts.append(token)
+                    yield _sse({"type": "token", "content": token})
+            except Exception as e:
+                logger.error(f"LLM streaming error: {e}")
+                for event in log_handler.drain():
+                    yield _sse(event)
+                yield _sse({"type": "error", "message": f"LLM error: {e}"})
+                return
+
+            llm_ms      = (time.perf_counter() - t0) * 1000
+            total_ms    = (time.perf_counter() - total_start) * 1000
+            ai_response = "".join(response_parts)
+
+            # 7 — Write to cache
+            write_status = None
+            try:
+                stored_key = await redis_service.set(
+                    query=search_query,
+                    response=ai_response,
+                    results=[m.model_dump() for m in retrieved_chunks],
+                    retrieval_latency_ms=round(retrieval_ms, 2),
+                    llm_latency_ms=round(llm_ms, 2),
+                    total_latency_ms=round(total_ms, 2),
+                )
+                write_status = f"stored:{stored_key}"
+            except Exception as e:
+                logger.error(f"Failed to write to cache: {e}")
+                write_status = f"error:{e}"
+            for event in log_handler.drain():
+                yield _sse(event)
+
+            # 8 — Update session
             if body.session_id:
                 session_store.add_message(body.session_id, "user", body.message)
-                session_store.add_message(body.session_id, "assistant", cache_lookup["response"])
+                session_store.add_message(body.session_id, "assistant", ai_response)
 
-            total_ms = (time.perf_counter() - total_start) * 1000
+            # 9 — Done event with full debug payload
             debug = RAGDebugInfo(
                 query=search_query,
                 top_k=TOP_K,
-                retrieved_count=len(cached_chunks),
+                retrieved_count=len(retrieved_chunks),
                 score_threshold=SCORE_THRESHOLD,
                 retrieval_mode="hybrid",
-                retrieval_latency_ms=0.0,
-                llm_latency_ms=0.0,
-                total_latency_ms=round(total_ms, 2),
-                cache=_build_hit_cache_info(cache_lookup),
-            )
-            yield _sse({"type": "done", "debug": debug.model_dump()})
-            return
-
-        logger.info("Cache MISS (stream). Proceeding to Vector Store.")
-
-        # 5 — Qdrant search
-        t0 = time.perf_counter()
-        try:
-            docs = await qdrant_service.search(search_query, k=TOP_K)
-        except Exception as e:
-            logger.error(f"Vector store error: {e}")
-            yield _sse({"type": "error", "message": f"Vector store error: {e}"})
-            return
-        retrieval_ms = (time.perf_counter() - t0) * 1000
-
-        retrieved_chunks = _map_chunks(docs)
-
-        # Send metadata — frontend can render source cards immediately
-        yield _sse({
-            "type":       "meta",
-            "query":      search_query,
-            "session_id": body.session_id,
-            "results":    [c.model_dump() for c in retrieved_chunks],
-            "from_cache": False,
-        })
-
-        if not docs:
-            logger.info("No relevant documents found (stream).")
-            no_result_msg = "I couldn't find any relevant passages from the book for your query."
-            yield _sse({"type": "token", "content": no_result_msg})
-            total_ms = (time.perf_counter() - total_start) * 1000
-            debug = RAGDebugInfo(
-                query=search_query,
-                top_k=TOP_K,
-                retrieved_count=0,
-                score_threshold=SCORE_THRESHOLD,
-                retrieval_mode="hybrid",
-                retrieval_latency_ms=round(retrieval_ms, 2),
-                llm_latency_ms=0.0,
-                total_latency_ms=round(total_ms, 2),
-                cache=_build_miss_cache_info(cache_lookup, cache_skip_reason, "skipped_no_results"),
-            )
-            yield _sse({"type": "done", "debug": debug.model_dump()})
-            return
-
-        # 6 — Stream LLM tokens, buffer for cache write
-        t0 = time.perf_counter()
-        response_parts: list[str] = []
-        try:
-            async for token in llm_service.stream_rag_response(
-                question=body.message,
-                context_docs=docs,
-                history=history or None,
-            ):
-                response_parts.append(token)
-                yield _sse({"type": "token", "content": token})
-        except Exception as e:
-            logger.error(f"LLM streaming error: {e}")
-            yield _sse({"type": "error", "message": f"LLM error: {e}"})
-            return
-
-        llm_ms    = (time.perf_counter() - t0) * 1000
-        total_ms  = (time.perf_counter() - total_start) * 1000
-        ai_response = "".join(response_parts)
-
-        # 7 — Write to cache
-        write_status = None
-        try:
-            stored_key = await redis_service.set(
-                query=search_query,
-                response=ai_response,
-                results=[m.model_dump() for m in retrieved_chunks],
                 retrieval_latency_ms=round(retrieval_ms, 2),
                 llm_latency_ms=round(llm_ms, 2),
                 total_latency_ms=round(total_ms, 2),
+                cache=_build_miss_cache_info(cache_lookup, cache_skip_reason, write_status),
             )
-            write_status = f"stored:{stored_key}"
-        except Exception as e:
-            logger.error(f"Failed to write to cache (stream): {e}")
-            write_status = f"error:{e}"
-
-        # 8 — Update session
-        if body.session_id:
-            session_store.add_message(body.session_id, "user", body.message)
-            session_store.add_message(body.session_id, "assistant", ai_response)
-
-        # 9 — Done event with full debug payload
-        debug = RAGDebugInfo(
-            query=search_query,
-            top_k=TOP_K,
-            retrieved_count=len(retrieved_chunks),
-            score_threshold=SCORE_THRESHOLD,
-            retrieval_mode="hybrid",
-            retrieval_latency_ms=round(retrieval_ms, 2),
-            llm_latency_ms=round(llm_ms, 2),
-            total_latency_ms=round(total_ms, 2),
-            cache=_build_miss_cache_info(cache_lookup, cache_skip_reason, write_status),
-        )
-        yield _sse({"type": "done", "debug": debug.model_dump()})
+            yield _sse({"type": "done", "debug": debug.model_dump()})
 
     return StreamingResponse(
         generate(),
