@@ -64,13 +64,13 @@ class CacheDebugInfo(BaseModel):
     )
     skipped_reason: str | None = Field(
         None,
-        description="Why cache was not checked at all (e.g. 'has_history', 'redis_unavailable', 'write_error')"
+        description="Why cache was not checked at all (e.g. 'redis_unavailable', 'write_error')"
     )
 
     # ── Write status (on live responses only) ─────────────────────────────────
     write_status: str | None = Field(
         None,
-        description="'stored' | 'skipped_has_history' | 'error:<msg>' — tells you if this response was cached"
+        description="'stored:<key>' | 'skipped_no_results' | 'error:<msg>' — tells you if this response was cached"
     )
 
 

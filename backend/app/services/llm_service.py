@@ -1,4 +1,5 @@
 import os
+from typing import AsyncGenerator
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
@@ -15,6 +16,7 @@ Keep answers concise but informative."""
 REFORMULATION_SYSTEM_PROMPT = """Given the conversation history and the user's latest question, formulate a standalone question that can be understood entirely on its own.
 Do NOT answer the question. Just rewrite it to resolve any pronouns (he, she, it) or implicit references into explicit names and subjects based on the history.
 If the question is already standalone, return it exactly as is."""
+
 
 class LLMService:
     def __init__(self):
@@ -39,6 +41,33 @@ class LLMService:
                 messages.append(AIMessage(content=m["content"]))
         return messages
 
+    def _build_rag_messages(
+        self,
+        question: str,
+        context_docs: list[dict],
+        history: list[dict] | None = None,
+    ) -> list:
+        """Shared message assembly for both streaming and non-streaming RAG calls."""
+        context_parts = []
+        for i, doc in enumerate(context_docs, 1):
+            meta = doc.get("metadata", {})
+            idx = meta.get("chunk_index", "Unknown")
+            context_parts.append(f"[{i}] [Chunk Index: {idx}]\n{doc['page_content']}")
+        context_text = "\n\n".join(context_parts)
+
+        messages = [SystemMessage(content=RAG_SYSTEM_PROMPT)]
+
+        if history:
+            logger.info(f"Injecting {len(history)} previous messages as conversation history.")
+            messages += self._build_history_messages(history)
+
+        messages.append(
+            HumanMessage(
+                content=f"Retrieved book context:\n{context_text}\n\nUser question: {question}"
+            )
+        )
+        return messages
+
     async def get_simple_response(self, prompt: str) -> str:
         messages = [
             SystemMessage(content="You are an expert AI Engineer. Answer clearly and technically."),
@@ -55,33 +84,35 @@ class LLMService:
     ) -> str:
         """
         Answer `question` grounded in `context_docs`, optionally with conversation history.
-
-        history items: {role: "user"|"assistant", content: str}
+        Returns the full response string (non-streaming).
         """
         logger.info(f"Assembling prompt for LLM with {len(context_docs)} context chunks.")
-        context_parts = []
-        for i, doc in enumerate(context_docs, 1):
-            meta = doc.get("metadata", {})
-            idx = meta.get("chunk_index", "Unknown Chapter")
-            context_parts.append(f"[{i}] [Chunk Index: {idx}]\n{doc['page_content']}")
-            context_text = "\n\n".join(context_parts)
-
-        messages = [SystemMessage(content=RAG_SYSTEM_PROMPT)]
-
-        if history:
-            logger.info(f"Injecting {len(history)} previous messages as conversation history.")
-            messages += self._build_history_messages(history)
-
-        messages.append(
-            HumanMessage(
-                content=f"Retrieved movie context:\n{context_text}\n\nUser question: {question}"
-            )
-        )
+        messages = self._build_rag_messages(question, context_docs, history)
 
         chain = self.llm | self.output_parser
         logger.debug("Awaiting LLM generation...")
+        result = await chain.ainvoke(messages)
         logger.info("LLM generation complete.")
-        return await chain.ainvoke(messages)
+        return result
+
+    async def stream_rag_response(
+        self,
+        question: str,
+        context_docs: list[dict],
+        history: list[dict] | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Answer `question` grounded in `context_docs` as an async token stream.
+        Yields string chunks as the LLM produces them.
+        """
+        logger.info(f"Assembling streaming prompt with {len(context_docs)} context chunks.")
+        messages = self._build_rag_messages(question, context_docs, history)
+
+        chain = self.llm | self.output_parser
+        logger.debug("Starting LLM stream...")
+        async for chunk in chain.astream(messages):
+            yield chunk
+        logger.info("LLM stream complete.")
 
     async def reformulate_query(self, question: str, history: list[dict] | None = None) -> str:
         """Rewrites the query using chat history to resolve context/pronouns."""
@@ -95,7 +126,8 @@ class LLMService:
 
         chain = self.llm | self.output_parser
         reformulated = await chain.ainvoke(messages)
-        
+
         return reformulated.strip(' "\'')
+
 
 llm_service = LLMService()

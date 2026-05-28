@@ -68,6 +68,31 @@ class QdrantService:
 
         logger.info(f"Qdrant retrieved {len(results)} valid chunks.")
         return results
+    
+    def verify_hybrid_setup(self):
+        """Pulls one record to prove sparse vectors actually exist in the DB."""
+        from app.services.logger_service import logger
+        try:
+            records, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                limit=1,
+                with_vectors=True
+            )
+            if records:
+                vectors = records[0].vector
+
+                is_dict = isinstance(vectors, dict)
+                has_sparse = is_dict and "sparse" in vectors
+                
+                logger.info("--- Qdrant Hybrid Check ---")
+                logger.info(f"Vector format is dictionary (Named Vectors): {is_dict}")
+                if is_dict:
+                    logger.info(f"Found Vector Names: {list(vectors.keys())}")
+                    logger.info(f"BM25 Sparse Vectors Present: {'YES' if has_sparse else 'NO'}")
+            else:
+                logger.warning("Qdrant collection is completely empty!")
+        except Exception as e:
+            logger.error(f"Failed to verify Qdrant setup: {e}")
 
 
 qdrant_service = QdrantService()

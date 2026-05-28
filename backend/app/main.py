@@ -1,7 +1,9 @@
+import asyncio
 import time
 import json
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 import os
 from app.services.logger_service import logger
@@ -46,6 +48,91 @@ app.add_middleware(
 
 TOP_K = 5
 
+# ── SSE helpers ───────────────────────────────────────────────────────────────
+
+def _sse(event: dict) -> str:
+    """Format a dict as a single SSE data line."""
+    return f"data: {json.dumps(event)}\n\n"
+
+
+# ── Shared pipeline helpers ───────────────────────────────────────────────────
+
+async def _resolve_query(message: str, session_id: str | None) -> tuple[list[dict], str]:
+    """
+    Returns (history, search_query).
+    Raises HTTPException 404 if session_id is provided but not found.
+    """
+    history: list[dict] = []
+    if session_id:
+        if not session_store.session_exists(session_id):
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found. Create via POST /api/session",
+            )
+        history = session_store.get_history_for_llm(session_id)
+
+    search_query = message
+    if history:
+        search_query = await llm_service.reformulate_query(message, history)
+        logger.info(f"Reformulated Query: '{message}' -> '{search_query}'")
+
+    return history, search_query
+
+
+def _build_miss_cache_info(
+    cache_lookup: dict | None,
+    cache_skip_reason: str | None,
+    write_status: str,
+) -> CacheDebugInfo:
+    best = None
+    if cache_lookup and cache_lookup.get("best_candidate"):
+        best = CacheMissCandidate(**cache_lookup["best_candidate"])
+    return CacheDebugInfo(
+        hit=False,
+        threshold=cache_lookup["threshold"] if cache_lookup else None,
+        entries_scanned=cache_lookup["entries_scanned"] if cache_lookup else None,
+        best_candidate=best,
+        skipped_reason=cache_skip_reason,
+        write_status=write_status,
+    )
+
+
+def _build_hit_cache_info(cache_lookup: dict) -> CacheDebugInfo:
+    return CacheDebugInfo(
+        hit=True,
+        matched_query=cache_lookup["matched_query"],
+        similarity_score=cache_lookup["similarity_score"],
+        cache_key=cache_lookup["cache_key"],
+        cached_at=cache_lookup["cached_at"],
+        ttl_seconds=cache_lookup["ttl_seconds"],
+        threshold=cache_lookup["threshold"],
+        entries_scanned=cache_lookup["entries_scanned"],
+        original_retrieval_latency_ms=cache_lookup["original_retrieval_latency_ms"],
+        original_llm_latency_ms=cache_lookup["original_llm_latency_ms"],
+        original_total_latency_ms=cache_lookup["original_total_latency_ms"],
+    )
+
+
+def _map_chunks(docs: list[dict]) -> list[RetrievedChunk]:
+    return [
+        RetrievedChunk(
+            content=doc["page_content"],
+            relevance_rank=doc["relevance_rank"],
+            relevance_score=doc["relevance_score"],
+        )
+        for doc in docs
+    ]
+
+
+# ── App startup ───────────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Starting up AI Portfolio Backend...")
+    qdrant_service.verify_hybrid_setup()
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/")
 async def root():
@@ -56,10 +143,14 @@ async def root():
     }
 
 
+# ── Test chat ─────────────────────────────────────────────────────────────────
+
 @app.post("/api/chat/test", response_model=ChatResponse)
 async def test_chat(request: ChatRequest):
     return ChatResponse(response=await llm_service.get_simple_response(request.message))
 
+
+# ── Session management ────────────────────────────────────────────────────────
 
 @app.post("/api/session", response_model=SessionCreateResponse, status_code=201)
 async def create_session():
@@ -84,6 +175,8 @@ async def get_history(session_id: str):
         messages=[HistoryMessage(**m) for m in history],
     )
 
+
+# ── Cache management ──────────────────────────────────────────────────────────
 
 @app.get("/api/cache", response_model=CacheListResponse)
 async def list_cache():
@@ -117,6 +210,8 @@ async def delete_cache_entry(cache_key: str):
     return CacheDeleteResponse(deleted_keys=deleted, deleted_count=len(deleted))
 
 
+# ── RAG chat (non-streaming) ──────────────────────────────────────────────────
+
 @app.post("/api/chat/rag", response_model=RAGChatResponse)
 @limiter.limit("5/minute")
 async def rag_chat(request: Request, body: RAGRequest):
@@ -125,33 +220,22 @@ async def rag_chat(request: Request, body: RAGRequest):
 
     total_start = time.perf_counter()
 
-    # 1. Fetch History
-    history: list[dict] = []
-    if body.session_id:
-        if not session_store.session_exists(body.session_id):
-            raise HTTPException(status_code=404, detail="Session not found. Create via POST /api/session")
-        history = session_store.get_history_for_llm(body.session_id)
+    # 1 & 2 — History + query reformulation
+    history, search_query = await _resolve_query(body.message, body.session_id)
 
-    # 2. Reformulate Query
-    search_query = body.message
-    if history:
-        search_query = await llm_service.reformulate_query(body.message, history)
-        logger.info(f"Reformulated Query: '{body.message}' -> '{search_query}'")
-
-    # 3. Check Cache (using reformulated query)
+    # 3 — Check cache
     cache_lookup: dict | None = None
     cache_skip_reason: str | None = None
-
     try:
         cache_lookup = await redis_service.get(search_query)
     except Exception as e:
         cache_skip_reason = f"redis_unavailable: {e}"
         logger.error(f"Redis cache error: {e}")
 
-    # 4. Handle Cache Hit
+    # 4 — Cache hit
     if cache_lookup and cache_lookup.get("hit"):
         logger.info(f"Cache HIT! Score: {cache_lookup['similarity_score']}. Returning cached response.")
-        total_ms      = (time.perf_counter() - total_start) * 1000
+        total_ms = (time.perf_counter() - total_start) * 1000
         cached_chunks = [RetrievedChunk(**m) for m in cache_lookup["results"]]
 
         if body.session_id:
@@ -170,40 +254,14 @@ async def rag_chat(request: Request, body: RAGRequest):
                 retrieval_latency_ms=0.0,
                 llm_latency_ms=0.0,
                 total_latency_ms=round(total_ms, 2),
-                cache=CacheDebugInfo(
-                    hit=True,
-                    matched_query=cache_lookup["matched_query"],
-                    similarity_score=cache_lookup["similarity_score"],
-                    cache_key=cache_lookup["cache_key"],
-                    cached_at=cache_lookup["cached_at"],
-                    ttl_seconds=cache_lookup["ttl_seconds"],
-                    threshold=cache_lookup["threshold"],
-                    entries_scanned=cache_lookup["entries_scanned"],
-                    original_retrieval_latency_ms=cache_lookup["original_retrieval_latency_ms"],
-                    original_llm_latency_ms=cache_lookup["original_llm_latency_ms"],
-                    original_total_latency_ms=cache_lookup["original_total_latency_ms"],
-                ),
+                cache=_build_hit_cache_info(cache_lookup),
             ),
             results=cached_chunks,
         )
 
     logger.info("Cache MISS. Proceeding to Vector Store.")
 
-    # Helper function to map cache miss info
-    def _miss_cache_info(write_status: str) -> CacheDebugInfo:
-        best = None
-        if cache_lookup and cache_lookup.get("best_candidate"):
-            best = CacheMissCandidate(**cache_lookup["best_candidate"])
-        return CacheDebugInfo(
-            hit=False,
-            threshold=cache_lookup["threshold"] if cache_lookup else None,
-            entries_scanned=cache_lookup["entries_scanned"] if cache_lookup else None,
-            best_candidate=best,
-            skipped_reason=cache_skip_reason,
-            write_status=write_status,
-        )
-
-    # 5. Handle Cache Miss -> Qdrant Search
+    # 5 — Qdrant search
     t0 = time.perf_counter()
     try:
         docs = await qdrant_service.search(search_query, k=TOP_K)
@@ -227,12 +285,12 @@ async def rag_chat(request: Request, body: RAGRequest):
                 retrieval_latency_ms=round(retrieval_ms, 2),
                 llm_latency_ms=0.0,
                 total_latency_ms=round(total_ms, 2),
-                cache=_miss_cache_info("skipped_no_results"),
+                cache=_build_miss_cache_info(cache_lookup, cache_skip_reason, "skipped_no_results"),
             ),
             results=[],
         )
 
-    # 6. LLM Generation
+    # 6 — LLM generation
     t0 = time.perf_counter()
     try:
         logger.info("Generating response with LLM...")
@@ -244,25 +302,14 @@ async def rag_chat(request: Request, body: RAGRequest):
     except Exception as e:
         logger.error(f"LLM generation error: {e}")
         raise HTTPException(status_code=503, detail=f"LLM error: {e}")
-    llm_ms    = (time.perf_counter() - t0) * 1000
-    total_ms  = (time.perf_counter() - total_start) * 1000
+    llm_ms   = (time.perf_counter() - t0) * 1000
+    total_ms = (time.perf_counter() - total_start) * 1000
 
-    # Map your book chunks
-    retrieved_chunks = [
-        RetrievedChunk(
-            content=doc["page_content"],
-            chapter=doc["metadata"].get("chapter"),
-            page_number=doc["metadata"].get("page_number"),
-            relevance_rank=doc["relevance_rank"],
-            relevance_score=doc["relevance_score"],
-        )
-        for doc in docs
-    ]
+    retrieved_chunks = _map_chunks(docs)
 
-    # 7. Write to Cache (Now executes every time)
+    # 7 — Write to cache
     write_status = None
     try:
-        logger.debug(f"Writing response to cache under query: '{search_query}'")
         stored_key = await redis_service.set(
             query=search_query,
             response=ai_response,
@@ -276,7 +323,7 @@ async def rag_chat(request: Request, body: RAGRequest):
         logger.error(f"Failed to write to cache: {e}")
         write_status = f"error:{e}"
 
-    # 8. Update Session History
+    # 8 — Update session
     if body.session_id:
         session_store.add_message(body.session_id, "user", body.message)
         session_store.add_message(body.session_id, "assistant", ai_response)
@@ -293,11 +340,216 @@ async def rag_chat(request: Request, body: RAGRequest):
             retrieval_latency_ms=round(retrieval_ms, 2),
             llm_latency_ms=round(llm_ms, 2),
             total_latency_ms=round(total_ms, 2),
-            cache=_miss_cache_info(write_status),
+            cache=_build_miss_cache_info(cache_lookup, cache_skip_reason, write_status),
         ),
         results=retrieved_chunks,
     )
 
+
+# ── RAG chat (streaming) ──────────────────────────────────────────────────────
+
+@app.post("/api/chat/rag/stream")
+@limiter.limit("5/minute")
+async def rag_chat_stream(request: Request, body: RAGRequest):
+    """
+    Streaming version of POST /api/chat/rag.
+
+    Returns Server Sent Events (SSE) with Content-Type: text/event-stream.
+    Each event is a JSON object on a `data:` line.
+
+    Event sequence
+    ──────────────
+    1. {"type": "meta", "query": str, "session_id": str|null,
+        "results": [RetrievedChunk, ...], "from_cache": bool}
+       Sent as soon as chunks are retrieved (or immediately on cache hit).
+       The frontend can render source cards before the first token arrives.
+
+    2. {"type": "token", "content": str}
+       One event per LLM token (or word, on a cache hit replay).
+
+    3. {"type": "done", "debug": RAGDebugInfo}
+       Sent once after the last token. Contains the full debug payload.
+
+    Error path
+    ──────────
+    {"type": "error", "message": str}  — stream ends after this event.
+
+    Notes
+    ─────
+    - On a cache hit the cached response is replayed word-by-word so the
+      frontend behaviour is identical regardless of cache state.
+    - The full response is buffered server-side before caching so the cache
+      write happens after streaming completes, not before.
+    """
+    logger.info(f"--- New Stream Request | Session: {body.session_id} ---")
+    logger.info(f"User Message: '{body.message}'")
+
+    async def generate():
+        total_start = time.perf_counter()
+
+        # 1 & 2 — History + query reformulation
+        try:
+            history, search_query = await _resolve_query(body.message, body.session_id)
+        except HTTPException as exc:
+            yield _sse({"type": "error", "message": exc.detail})
+            return
+
+        # 3 — Check cache
+        cache_lookup: dict | None = None
+        cache_skip_reason: str | None = None
+        try:
+            cache_lookup = await redis_service.get(search_query)
+        except Exception as e:
+            cache_skip_reason = f"redis_unavailable: {e}"
+            logger.error(f"Redis cache error: {e}")
+
+        # 4 — Cache hit: replay word-by-word
+        if cache_lookup and cache_lookup.get("hit"):
+            logger.info(f"Cache HIT (stream). Score: {cache_lookup['similarity_score']}")
+            cached_chunks = [RetrievedChunk(**m) for m in cache_lookup["results"]]
+
+            yield _sse({
+                "type":       "meta",
+                "query":      search_query,
+                "session_id": body.session_id,
+                "results":    [c.model_dump() for c in cached_chunks],
+                "from_cache": True,
+            })
+
+            # Replay cached response word-by-word
+            words = cache_lookup["response"].split(" ")
+            for i, word in enumerate(words):
+                token = word if i == 0 else f" {word}"
+                yield _sse({"type": "token", "content": token})
+                await asyncio.sleep(0)  # yield control to the event loop
+
+            if body.session_id:
+                session_store.add_message(body.session_id, "user", body.message)
+                session_store.add_message(body.session_id, "assistant", cache_lookup["response"])
+
+            total_ms = (time.perf_counter() - total_start) * 1000
+            debug = RAGDebugInfo(
+                query=search_query,
+                top_k=TOP_K,
+                retrieved_count=len(cached_chunks),
+                score_threshold=SCORE_THRESHOLD,
+                retrieval_mode="hybrid",
+                retrieval_latency_ms=0.0,
+                llm_latency_ms=0.0,
+                total_latency_ms=round(total_ms, 2),
+                cache=_build_hit_cache_info(cache_lookup),
+            )
+            yield _sse({"type": "done", "debug": debug.model_dump()})
+            return
+
+        logger.info("Cache MISS (stream). Proceeding to Vector Store.")
+
+        # 5 — Qdrant search
+        t0 = time.perf_counter()
+        try:
+            docs = await qdrant_service.search(search_query, k=TOP_K)
+        except Exception as e:
+            logger.error(f"Vector store error: {e}")
+            yield _sse({"type": "error", "message": f"Vector store error: {e}"})
+            return
+        retrieval_ms = (time.perf_counter() - t0) * 1000
+
+        retrieved_chunks = _map_chunks(docs)
+
+        # Send metadata — frontend can render source cards immediately
+        yield _sse({
+            "type":       "meta",
+            "query":      search_query,
+            "session_id": body.session_id,
+            "results":    [c.model_dump() for c in retrieved_chunks],
+            "from_cache": False,
+        })
+
+        if not docs:
+            logger.info("No relevant documents found (stream).")
+            no_result_msg = "I couldn't find any relevant passages from the book for your query."
+            yield _sse({"type": "token", "content": no_result_msg})
+            total_ms = (time.perf_counter() - total_start) * 1000
+            debug = RAGDebugInfo(
+                query=search_query,
+                top_k=TOP_K,
+                retrieved_count=0,
+                score_threshold=SCORE_THRESHOLD,
+                retrieval_mode="hybrid",
+                retrieval_latency_ms=round(retrieval_ms, 2),
+                llm_latency_ms=0.0,
+                total_latency_ms=round(total_ms, 2),
+                cache=_build_miss_cache_info(cache_lookup, cache_skip_reason, "skipped_no_results"),
+            )
+            yield _sse({"type": "done", "debug": debug.model_dump()})
+            return
+
+        # 6 — Stream LLM tokens, buffer for cache write
+        t0 = time.perf_counter()
+        response_parts: list[str] = []
+        try:
+            async for token in llm_service.stream_rag_response(
+                question=body.message,
+                context_docs=docs,
+                history=history or None,
+            ):
+                response_parts.append(token)
+                yield _sse({"type": "token", "content": token})
+        except Exception as e:
+            logger.error(f"LLM streaming error: {e}")
+            yield _sse({"type": "error", "message": f"LLM error: {e}"})
+            return
+
+        llm_ms    = (time.perf_counter() - t0) * 1000
+        total_ms  = (time.perf_counter() - total_start) * 1000
+        ai_response = "".join(response_parts)
+
+        # 7 — Write to cache
+        write_status = None
+        try:
+            stored_key = await redis_service.set(
+                query=search_query,
+                response=ai_response,
+                results=[m.model_dump() for m in retrieved_chunks],
+                retrieval_latency_ms=round(retrieval_ms, 2),
+                llm_latency_ms=round(llm_ms, 2),
+                total_latency_ms=round(total_ms, 2),
+            )
+            write_status = f"stored:{stored_key}"
+        except Exception as e:
+            logger.error(f"Failed to write to cache (stream): {e}")
+            write_status = f"error:{e}"
+
+        # 8 — Update session
+        if body.session_id:
+            session_store.add_message(body.session_id, "user", body.message)
+            session_store.add_message(body.session_id, "assistant", ai_response)
+
+        # 9 — Done event with full debug payload
+        debug = RAGDebugInfo(
+            query=search_query,
+            top_k=TOP_K,
+            retrieved_count=len(retrieved_chunks),
+            score_threshold=SCORE_THRESHOLD,
+            retrieval_mode="hybrid",
+            retrieval_latency_ms=round(retrieval_ms, 2),
+            llm_latency_ms=round(llm_ms, 2),
+            total_latency_ms=round(total_ms, 2),
+            cache=_build_miss_cache_info(cache_lookup, cache_skip_reason, write_status),
+        )
+        yield _sse({"type": "done", "debug": debug.model_dump()})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disables nginx response buffering
+        },
+    )
+
+
+# ── Cache debug ───────────────────────────────────────────────────────────────
 
 @app.get("/api/cache/debug")
 async def debug_cache(q: str):
@@ -309,8 +561,6 @@ async def debug_cache(q: str):
       - Whether the embedding field exists and its length
       - The cache key
     No threshold applied — you see all scores as-is.
-    Lets you verify the similarity engine is working and what score
-    your query actually gets against each stored entry.
     """
     try:
         query_embedding = await redis_service._embed(q)
@@ -331,13 +581,13 @@ async def debug_cache(q: str):
                 has_emb = isinstance(emb, list) and len(emb) > 0
                 score   = round(_cosine_similarity(query_embedding, emb), 6) if has_emb else None
                 results.append({
-                    "cache_key":        key,
-                    "stored_query":     entry.get("query", "<missing>"),
-                    "cached_at":        entry.get("cached_at", "<missing>"),
+                    "cache_key":         key,
+                    "stored_query":      entry.get("query", "<missing>"),
+                    "cached_at":         entry.get("cached_at", "<missing>"),
                     "embedding_present": has_emb,
-                    "embedding_length": len(emb) if has_emb else 0,
-                    "similarity_score": score,
-                    "would_hit":        score is not None and score >= 0.92,
+                    "embedding_length":  len(emb) if has_emb else 0,
+                    "similarity_score":  score,
+                    "would_hit":         score is not None and score >= 0.92,
                 })
             except Exception as e:
                 results.append({"cache_key": key, "error": str(e)})
@@ -345,9 +595,9 @@ async def debug_cache(q: str):
             break
 
     return {
-        "query": q,
+        "query":                  q,
         "query_embedding_length": len(query_embedding),
-        "threshold": 0.92,
-        "entries_checked": len(results),
-        "results": sorted(results, key=lambda x: x.get("similarity_score") or 0, reverse=True),
+        "threshold":              0.92,
+        "entries_checked":        len(results),
+        "results":                sorted(results, key=lambda x: x.get("similarity_score") or 0, reverse=True),
     }

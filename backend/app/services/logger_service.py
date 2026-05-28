@@ -23,7 +23,8 @@ def setup_logger():
         
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
-
+        
+    logging.getLogger("httpx").setLevel(logging.INFO)
     return logger
 
 # Export the instantiated logger
