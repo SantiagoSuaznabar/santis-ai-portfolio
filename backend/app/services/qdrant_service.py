@@ -34,7 +34,7 @@ class QdrantService:
             sparse_vector_name="sparse",
         )
 
-    async def search(self, query: str, k: int = 5) -> list[dict]:
+    async def search(self, query: str, k: int = 8) -> list[dict]:
         """
         Hybrid similarity search.
         Uses similarity_search_with_relevance_scores which normalises scores to [0, 1].
@@ -65,7 +65,7 @@ class QdrantService:
                 "relevance_score": round(score, 4),
             })
             rank += 1
-            
+
         logger.info(f"Qdrant retrieved {len(results)} valid chunks.")
         return results
 

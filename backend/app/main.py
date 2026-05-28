@@ -116,24 +116,31 @@ async def rag_chat(request: RAGRequest):
 
     total_start = time.perf_counter()
 
+    # 1. Fetch History
     history: list[dict] = []
     if request.session_id:
         if not session_store.session_exists(request.session_id):
             raise HTTPException(status_code=404, detail="Session not found. Create via POST /api/session")
         history = session_store.get_history_for_llm(request.session_id)
 
+    # 2. Reformulate Query
+    search_query = request.message
+    if history:
+        search_query = await llm_service.reformulate_query(request.message, history)
+        logger.info(f"Reformulated Query: '{request.message}' -> '{search_query}'")
+
+    # 3. Check Cache (using reformulated query)
     cache_lookup: dict | None = None
     cache_skip_reason: str | None = None
 
-    if history:
-        cache_skip_reason = "has_history"
-    else:
-        try:
-            cache_lookup = await redis_service.get(request.message)
-        except Exception as e:
-            cache_skip_reason = f"redis_unavailable: {e}"
+    try:
+        cache_lookup = await redis_service.get(search_query)
+    except Exception as e:
+        cache_skip_reason = f"redis_unavailable: {e}"
+        logger.error(f"Redis cache error: {e}")
 
-    if cache_lookup and cache_lookup["hit"]:
+    # 4. Handle Cache Hit
+    if cache_lookup and cache_lookup.get("hit"):
         logger.info(f"Cache HIT! Score: {cache_lookup['similarity_score']}. Returning cached response.")
         total_ms      = (time.perf_counter() - total_start) * 1000
         cached_chunks = [RetrievedChunk(**m) for m in cache_lookup["results"]]
@@ -146,7 +153,7 @@ async def rag_chat(request: RAGRequest):
             response=cache_lookup["response"],
             session_id=request.session_id,
             debug=RAGDebugInfo(
-                query=request.message,
+                query=search_query,
                 top_k=TOP_K,
                 retrieved_count=len(cached_chunks),
                 score_threshold=SCORE_THRESHOLD,
@@ -170,14 +177,117 @@ async def rag_chat(request: RAGRequest):
             ),
             results=cached_chunks,
         )
+
     logger.info("Cache MISS. Proceeding to Vector Store.")
 
+    # Helper function to map cache miss info
+    def _miss_cache_info(write_status: str) -> CacheDebugInfo:
+        best = None
+        if cache_lookup and cache_lookup.get("best_candidate"):
+            best = CacheMissCandidate(**cache_lookup["best_candidate"])
+        return CacheDebugInfo(
+            hit=False,
+            threshold=cache_lookup["threshold"] if cache_lookup else None,
+            entries_scanned=cache_lookup["entries_scanned"] if cache_lookup else None,
+            best_candidate=best,
+            skipped_reason=cache_skip_reason,
+            write_status=write_status,
+        )
+
+    # 5. Handle Cache Miss -> Qdrant Search
     t0 = time.perf_counter()
     try:
-        docs = await qdrant_service.search(request.message, k=TOP_K)
+        docs = await qdrant_service.search(search_query, k=TOP_K)
     except Exception as e:
+        logger.error(f"Vector store error: {e}")
         raise HTTPException(status_code=503, detail=f"Vector store error: {e}")
     retrieval_ms = (time.perf_counter() - t0) * 1000
+
+    if not docs:
+        logger.info("No relevant documents found in vector store.")
+        total_ms = (time.perf_counter() - total_start) * 1000
+        return RAGChatResponse(
+            response="I couldn't find any relevant passages from the book for your query.",
+            session_id=request.session_id,
+            debug=RAGDebugInfo(
+                query=search_query,
+                top_k=TOP_K,
+                retrieved_count=0,
+                score_threshold=SCORE_THRESHOLD,
+                retrieval_mode="hybrid",
+                retrieval_latency_ms=round(retrieval_ms, 2),
+                llm_latency_ms=0.0,
+                total_latency_ms=round(total_ms, 2),
+                cache=_miss_cache_info("skipped_no_results"),
+            ),
+            results=[],
+        )
+
+    # 6. LLM Generation
+    t0 = time.perf_counter()
+    try:
+        logger.info("Generating response with LLM...")
+        ai_response = await llm_service.get_rag_response(
+            question=request.message,
+            context_docs=docs,
+            history=history or None,
+        )
+    except Exception as e:
+        logger.error(f"LLM generation error: {e}")
+        raise HTTPException(status_code=503, detail=f"LLM error: {e}")
+    llm_ms    = (time.perf_counter() - t0) * 1000
+    total_ms  = (time.perf_counter() - total_start) * 1000
+
+    # Map your book chunks
+    retrieved_chunks = [
+        RetrievedChunk(
+            content=doc["page_content"],
+            chapter=doc["metadata"].get("chapter"),
+            page_number=doc["metadata"].get("page_number"),
+            relevance_rank=doc["relevance_rank"],
+            relevance_score=doc["relevance_score"],
+        )
+        for doc in docs
+    ]
+
+    # 7. Write to Cache (Now executes every time)
+    write_status = None
+    try:
+        logger.debug(f"Writing response to cache under query: '{search_query}'")
+        stored_key = await redis_service.set(
+            query=search_query,
+            response=ai_response,
+            results=[m.model_dump() for m in retrieved_chunks],
+            retrieval_latency_ms=round(retrieval_ms, 2),
+            llm_latency_ms=round(llm_ms, 2),
+            total_latency_ms=round(total_ms, 2),
+        )
+        write_status = f"stored:{stored_key}"
+    except Exception as e:
+        logger.error(f"Failed to write to cache: {e}")
+        write_status = f"error:{e}"
+
+    # 8. Update Session History
+    if request.session_id:
+        session_store.add_message(request.session_id, "user", request.message)
+        session_store.add_message(request.session_id, "assistant", ai_response)
+
+    return RAGChatResponse(
+        response=ai_response,
+        session_id=request.session_id,
+        debug=RAGDebugInfo(
+            query=search_query,
+            top_k=TOP_K,
+            retrieved_count=len(retrieved_chunks),
+            score_threshold=SCORE_THRESHOLD,
+            retrieval_mode="hybrid",
+            retrieval_latency_ms=round(retrieval_ms, 2),
+            llm_latency_ms=round(llm_ms, 2),
+            total_latency_ms=round(total_ms, 2),
+            cache=_miss_cache_info(write_status),
+        ),
+        results=retrieved_chunks,
+    )
 
     def _miss_cache_info(write_status: str) -> CacheDebugInfo:
         best = None
