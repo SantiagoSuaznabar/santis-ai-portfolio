@@ -14,6 +14,7 @@ class QdrantService:
     def __init__(self):
         qdrant_url = os.getenv("QDRANT_URL")
         api_key = os.getenv("GEMINI_API_KEY")
+        qdrant_api_key = os.getenv("QDRANT_API_KEY")
 
         self.embeddings = GoogleGenerativeAIEmbeddings(
             model="models/gemini-embedding-001",
@@ -21,7 +22,7 @@ class QdrantService:
         )
         self.sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
 
-        self.client = QdrantClient(url=qdrant_url)
+        self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
         self.collection_name = "hybrid_three_days_of_happiness"
 
     def get_vector_store(self) -> QdrantVectorStore:
