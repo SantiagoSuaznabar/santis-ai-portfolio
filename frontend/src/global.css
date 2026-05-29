@@ -9,8 +9,8 @@
   --border-subtle: #161a24;
   --text-primary:  #f1f5f9;
   --text-secondary:#cbd5e1;
-  --text-muted:    #4a5568;
-  --text-faint:    #2d3748;
+  --text-muted:    #8892a4;  /* was #4a5568 — lifted for legibility */
+  --text-faint:    #55607a;  /* was #2d3748 — lifted for legibility */
   --accent:        #3b82f6;
   --accent-dim:    rgba(59,130,246,0.12);
   --accent-glow:   rgba(59,130,246,0.08);

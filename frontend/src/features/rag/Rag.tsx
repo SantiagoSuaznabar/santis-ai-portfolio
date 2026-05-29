@@ -21,12 +21,19 @@ interface StackItem {
   color?: string;
 }
 
+interface Topic {
+  title: string;
+  author?: string;
+  synopsis?: string;
+}
+
 interface Props {
   description?: string;
+  topic?: Topic;
+  sampleQuestions?: string[];
   stack?: StackItem[];
 }
 
-// Token drip speed — raise to slow down visible streaming
 const TOKEN_DRIP_MS = 35;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -94,27 +101,91 @@ function MessageBubble({ msg }: { msg: Message }) {
   );
 }
 
+// ─── Right panel: Topic + Sample Questions ────────────────────────────────────
+
+function TopicPanel({
+  topic,
+  sampleQuestions = [],
+  onAsk,
+  disabled,
+}: {
+  topic?: Topic;
+  sampleQuestions?: string[];
+  onAsk: (q: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <aside className={styles.topicPanel}>
+
+      {/* Topic card */}
+      {topic && (
+        <div className={styles.sideSection}>
+          <div className={styles.sideSectionHeader}>
+            <span className={styles.sideSectionTitle}>Topic</span>
+          </div>
+
+          <div className={styles.topicCard}>
+            <div className={styles.topicBookmark} />
+            <div className={styles.topicCardInner}>
+              <p className={styles.topicTitle}>{topic.title}</p>
+              {topic.author && (
+                <p className={styles.topicAuthor}>by {topic.author}</p>
+              )}
+              {topic.synopsis && (
+                <p className={styles.topicSynopsis}>{topic.synopsis}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sample questions */}
+      {sampleQuestions.length > 0 && (
+        <div className={`${styles.sideSection} ${styles.sideSectionFlex}`}>
+          <div className={styles.sideSectionHeader}>
+            <span className={styles.sideSectionTitle}>Try asking</span>
+          </div>
+
+          <div className={`${styles.questionList} scroll-thin`}>
+            {sampleQuestions.map((q, i) => (
+              <button
+                key={i}
+                className={styles.questionItem}
+                onClick={() => onAsk(q)}
+                disabled={disabled}
+              >
+                <span className={styles.questionNum}>{i + 1}</span>
+                <span className={styles.questionText}>{q}</span>
+                <span className={styles.questionArrow}>→</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Rag({ description, stack = [] }: Props) {
-  const [sessionId, setSessionId]   = useState<string | null>(null);
-  const [messages, setMessages]     = useState<Message[]>([]);
-  const [logs, setLogs]             = useState<LogEntryWithId[]>([]);
-  const [input, setInput]           = useState('');
-  const [isLoading, setIsLoading]   = useState(false);
+export default function Rag({ description, topic, sampleQuestions = [], stack = [] }: Props) {
+  const [sessionId, setSessionId]       = useState<string | null>(null);
+  const [messages, setMessages]         = useState<Message[]>([]);
+  const [logs, setLogs]                 = useState<LogEntryWithId[]>([]);
+  const [input, setInput]               = useState('');
+  const [isLoading, setIsLoading]       = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
 
-  const sessionIdRef  = useRef<string | null>(null);
-  const chatEndRef    = useRef<HTMLDivElement>(null);
-  const logsEndRef    = useRef<HTMLDivElement>(null);
-  const logIdRef      = useRef(0);
-  const firstTsRef    = useRef<number | null>(null);
-  const textareaRef   = useRef<HTMLTextAreaElement>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const chatEndRef   = useRef<HTMLDivElement>(null);
+  const logsEndRef   = useRef<HTMLDivElement>(null);
+  const logIdRef     = useRef(0);
+  const firstTsRef   = useRef<number | null>(null);
+  const textareaRef  = useRef<HTMLTextAreaElement>(null);
 
-  // Token drip queue — decouples SSE cadence from React renders
-  const tokenQueueRef  = useRef<string[]>([]);
-  const dripTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const streamDoneRef  = useRef(false);
+  const tokenQueueRef = useRef<string[]>([]);
+  const dripTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamDoneRef = useRef(false);
 
   function startDrip() {
     if (dripTimerRef.current) return;
@@ -149,7 +220,6 @@ export default function Rag({ description, stack = [] }: Props) {
     streamDoneRef.current = false;
   }
 
-  // Session lifecycle
   useEffect(() => {
     async function init() {
       try {
@@ -171,9 +241,9 @@ export default function Rag({ description, stack = [] }: Props) {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
   };
 
-  const handleSubmit = useCallback(async () => {
-    const userMsg = input.trim();
-    if (!userMsg || !sessionId || isLoading) return;
+  // Called both from textarea submit and from question chip clicks
+  const submitMessage = useCallback(async (msg: string) => {
+    if (!msg.trim() || !sessionId || isLoading) return;
 
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -182,12 +252,12 @@ export default function Rag({ description, stack = [] }: Props) {
 
     setMessages(prev => [
       ...prev,
-      { role: 'user', content: userMsg },
+      { role: 'user', content: msg },
       { role: 'assistant', content: '', isStreaming: true },
     ]);
     setIsLoading(true);
 
-    await streamChat(userMsg, sessionId, {
+    await streamChat(msg, sessionId, {
       onLog: (log) => {
         const id = ++logIdRef.current;
         if (firstTsRef.current === null) firstTsRef.current = log.ts;
@@ -221,7 +291,9 @@ export default function Rag({ description, stack = [] }: Props) {
         });
       },
     });
-  }, [input, sessionId, isLoading]);
+  }, [sessionId, isLoading]);
+
+  const handleSubmit = useCallback(() => submitMessage(input), [input, submitMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
@@ -231,10 +303,9 @@ export default function Rag({ description, stack = [] }: Props) {
   return (
     <div className={styles.shell}>
 
-      {/* ── Left sidebar: stack info + logs ── */}
+      {/* ── Left: Stack + Logs ── */}
       <aside className={styles.sidebar}>
 
-        {/* Stack info */}
         <div className={styles.sideSection}>
           <div className={styles.sideSectionHeader}>
             <span className={styles.termDot} />
@@ -243,18 +314,13 @@ export default function Rag({ description, stack = [] }: Props) {
             <span className={styles.sideSectionTitle}>Stack</span>
           </div>
 
-          {description && (
-            <p className={styles.moduleDesc}>{description}</p>
-          )}
+          {description && <p className={styles.moduleDesc}>{description}</p>}
 
           {stack.length > 0 && (
             <div className={styles.stackList}>
               {stack.map(s => (
                 <div key={s.name} className={styles.stackItem}>
-                  <span
-                    className={styles.stackDot}
-                    style={{ background: s.color || '#3b82f6' }}
-                  />
+                  <span className={styles.stackDot} style={{ background: s.color || '#3b82f6' }} />
                   <span className={styles.stackName}>{s.name}</span>
                   <span className={styles.stackRole}>{s.role}</span>
                 </div>
@@ -264,11 +330,10 @@ export default function Rag({ description, stack = [] }: Props) {
         </div>
 
         {/* Logs */}
-        <div className={styles.sideSection} style={{ flex: 1, minHeight: 0 }}>
+        <div className={`${styles.sideSection} ${styles.sideSectionFlex}`}>
           <div className={styles.sideSectionHeader}>
             <span className={styles.sideSectionTitle}>Pipeline Logs</span>
           </div>
-
           <div className={`${styles.logsScroll} scroll-thin`}>
             {logs.length === 0 ? (
               <div className={styles.logsEmpty}>
@@ -282,14 +347,13 @@ export default function Rag({ description, stack = [] }: Props) {
           </div>
         </div>
 
-        {/* Status bar */}
         <div className={styles.statusBar}>
           <span className={`${styles.statusDot} ${isConnecting ? styles.connecting : ''}`} />
           {isConnecting ? 'connecting…' : sessionId ? `session ${sessionId.slice(0, 8)}…` : 'no session'}
         </div>
       </aside>
 
-      {/* ── Right: Chat ── */}
+      {/* ── Centre: Chat ── */}
       <section className={styles.chatPanel}>
         <div className={`${styles.chatWindow} scroll-thin`}>
           {messages.length === 0 ? (
@@ -339,6 +403,14 @@ export default function Rag({ description, stack = [] }: Props) {
           <div className={styles.inputHint}>↵ send · ⇧↵ newline</div>
         </div>
       </section>
+
+      {/* ── Right: Topic + Questions ── */}
+      <TopicPanel
+        topic={topic}
+        sampleQuestions={sampleQuestions}
+        onAsk={(q) => submitMessage(q)}
+        disabled={isLoading || isConnecting}
+      />
     </div>
   );
 }

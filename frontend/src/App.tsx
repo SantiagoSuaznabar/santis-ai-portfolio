@@ -3,14 +3,13 @@ import config from './portfolio.config.json';
 import Profile from './features/profile/Profile';
 import Rag from './features/rag/Rag';
 import './global.css';
-import './features/profile/Profile.module.css';
 
 type ModuleId = 'profile' | string;
 
 export default function App() {
   const [active, setActive] = useState<ModuleId>('profile');
 
-  const activeModule = config.modules.find(m => m.id === active);
+  const activeModule = config.modules.find(m => m.id === active) as any;
 
   function renderView() {
     if (active === 'profile') {
@@ -26,23 +25,21 @@ export default function App() {
       return (
         <Rag
           description={activeModule?.description}
-          stack={activeModule?.stack as any}
+          topic={activeModule?.topic}
+          sampleQuestions={activeModule?.['sample questions']}
+          stack={activeModule?.stack}
         />
       );
     }
-    // Future modules go here
     return null;
   }
 
   return (
     <div className="portfolio-shell">
-
-      {/* ── Top nav ── */}
       <nav className="portfolio-nav">
         <span className="portfolio-nav__wordmark">{config.profile.name}</span>
         <span className="portfolio-nav__divider" />
 
-        {/* Profile tab */}
         <button
           className={`portfolio-nav__tab ${active === 'profile' ? 'portfolio-nav__tab--active' : ''}`}
           onClick={() => setActive('profile')}
@@ -51,17 +48,16 @@ export default function App() {
           Profile
         </button>
 
-        {/* Module tabs */}
         {config.modules.map(m => {
-          const isLive     = m.status === 'live';
-          const isActive   = active === m.id;
+          const isLive   = m.status === 'live';
+          const isActive = active === m.id;
           return (
             <button
               key={m.id}
               className={[
                 'portfolio-nav__tab',
-                isActive   ? 'portfolio-nav__tab--active'  : '',
-                !isLive    ? 'portfolio-nav__tab--disabled' : '',
+                isActive ? 'portfolio-nav__tab--active'  : '',
+                !isLive  ? 'portfolio-nav__tab--disabled' : '',
               ].join(' ')}
               onClick={() => isLive && setActive(m.id)}
               disabled={!isLive}
@@ -74,11 +70,9 @@ export default function App() {
         })}
       </nav>
 
-      {/* ── Active view ── */}
       <div className="portfolio-view">
         {renderView()}
       </div>
-
     </div>
   );
 }

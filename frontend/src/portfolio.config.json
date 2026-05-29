@@ -14,7 +14,11 @@
       "label": "RAG",
       "status": "live",
       "description": "A retrieval-augmented generation pipeline, using Redis as the semantic cache, Qdrant as the vector store with a Hybrid Search as a retrieval strategy(One dense vector and one sparse vector), applied a Query Reformulator before making the search.",
-      "about the topic": "The vector store was fed with one of my favorite Novel/Book/Manga: 'Three Days of Happiness' or 'I sold my lifespan for 300k yen' by Sugaru Miaki",
+      "topic": {
+      "title": "Three Days of Happiness",
+      "author": "Sugaru Miaki",
+      "synopsis": "Three Days of Happiness (also known as I Sold My Life for 10,000 Yen a Year) follows Kusunoki, a broke, 20-year-old with no future prospects. He discovers a shop that buys lifespans, where he learns his remaining 30 years are valued at a mere ¥300,000 (about $2,000). He sells all but his final three months to enjoy the money. Kusunoki, jaded and believing his life is worthless, accepts the abysmal trade-off. However, the lifespan shop has a strict policy: to prevent impulsive or reckless behavior from those who have sold their time, the company assigns an 'observer' to monitor the client until their final days. Enter Miyagi, a quiet, emotionless young woman who becomes Kusunoki's constant companion during the final quarter of his life."   
+      },
       "sample questions": [
         "What is the name of the main character?",
         "How much money was his lifespan worth?",
