@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { createSession, deleteSession, streamChat, type LogEvent } from './api';
+import { createSession, deleteSession, streamChat, checkHealth, type LogEvent } from './api';
 import styles from './Rag.module.css';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Message = {
   role: 'user' | 'assistant';
@@ -14,27 +14,113 @@ type Message = {
 };
 
 type LogEntryWithId = LogEvent & { id: number; relativeTs?: string };
+type ServerStatus   = 'checking' | 'waking' | 'online';
 
-interface StackItem {
-  name: string;
-  role: string;
-  color?: string;
-}
-
-interface Topic {
-  title: string;
-  author?: string;
-  synopsis?: string;
-}
+interface StackItem  { name: string; role: string; color?: string; }
+interface Topic      { title: string; author?: string; synopsis?: string; }
+interface Notice     { icon: string; label: string; detail: string; }
+interface Wakeup     { estimate?: string; message?: string; }
 
 interface Props {
   description?: string;
   topic?: Topic;
   sampleQuestions?: string[];
   stack?: StackItem[];
+  notices?: Notice[];
+  wakeup?: Wakeup;
 }
 
 const TOKEN_DRIP_MS = 35;
+
+// ─── Wake Modal ───────────────────────────────────────────────────────────────
+
+function RagWakeModal({
+  serverStatus,
+  redisStatus,
+  elapsedSecs,
+  wakeup,
+  notices = [],
+  onContinue,
+}: {
+  serverStatus: ServerStatus;
+  redisStatus: string | null;
+  elapsedSecs: number;
+  wakeup?: Wakeup;
+  notices?: Notice[];
+  onContinue: () => void;
+}) {
+  const isOnline = serverStatus === 'online';
+
+  const statusTitle =
+    serverStatus === 'online'  ? 'Server online'
+    : serverStatus === 'waking' ? 'Waking server…'
+    : 'Pinging server…';
+
+  return (
+    <div className={styles.modalOverlay}>
+      <div className={styles.modal}>
+
+        {/* ── Status ── */}
+        <div className={styles.modalStatusSection}>
+          <div className={`${styles.statusOrb} ${styles[`orb${serverStatus.charAt(0).toUpperCase() + serverStatus.slice(1)}`]}`}>
+            <div className={styles.statusOrbInner} />
+          </div>
+          <div className={styles.statusInfo}>
+            <div className={styles.statusTitle}>{statusTitle}</div>
+            <div className={styles.statusMeta}>
+              {isOnline ? (
+                <span>
+                  redis:&nbsp;
+                  <span style={{ color: redisStatus === 'connected' ? 'var(--green)' : 'var(--amber)' }}>
+                    {redisStatus ?? 'unknown'}
+                  </span>
+                </span>
+              ) : (
+                <>
+                  <span>est. {wakeup?.estimate ?? '30–60s'}</span>
+                  <span className={styles.statusMetaSep}>·</span>
+                  <span>{elapsedSecs}s elapsed</span>
+                </>
+              )}
+            </div>
+            {!isOnline && wakeup?.message && (
+              <p className={styles.statusMessage}>{wakeup.message}</p>
+            )}
+          </div>
+        </div>
+
+        {/* ── Notices ── */}
+        {notices.length > 0 && (
+          <div className={styles.noticeGrid}>
+            {notices.map((n, i) => (
+              <div key={i} className={styles.noticeCard}>
+                <span className={styles.noticeIcon}>{n.icon}</span>
+                <span className={styles.noticeLabel}>{n.label}</span>
+                <span className={styles.noticeDetail}>{n.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Footer ── */}
+        <div className={styles.modalFooter}>
+          <div className={styles.modalMeta}>
+            <span className={styles.modalMetaDot} />
+            <span>render · free tier</span>
+          </div>
+          <button
+            className={styles.continueBtn}
+            onClick={onContinue}
+            disabled={!isOnline}
+          >
+            {isOnline ? 'Continue →' : 'Please wait…'}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -116,36 +202,27 @@ function TopicPanel({
 }) {
   return (
     <aside className={styles.topicPanel}>
-
-      {/* Topic card */}
       {topic && (
         <div className={styles.sideSection}>
           <div className={styles.sideSectionHeader}>
             <span className={styles.sideSectionTitle}>Topic</span>
           </div>
-
           <div className={styles.topicCard}>
             <div className={styles.topicBookmark} />
             <div className={styles.topicCardInner}>
               <p className={styles.topicTitle}>{topic.title}</p>
-              {topic.author && (
-                <p className={styles.topicAuthor}>by {topic.author}</p>
-              )}
-              {topic.synopsis && (
-                <p className={styles.topicSynopsis}>{topic.synopsis}</p>
-              )}
+              {topic.author && <p className={styles.topicAuthor}>by {topic.author}</p>}
+              {topic.synopsis && <p className={styles.topicSynopsis}>{topic.synopsis}</p>}
             </div>
           </div>
         </div>
       )}
 
-      {/* Sample questions */}
       {sampleQuestions.length > 0 && (
         <div className={`${styles.sideSection} ${styles.sideSectionFlex}`}>
           <div className={styles.sideSectionHeader}>
             <span className={styles.sideSectionTitle}>Try asking</span>
           </div>
-
           <div className={`${styles.questionList} scroll-thin`}>
             {sampleQuestions.map((q, i) => (
               <button
@@ -168,7 +245,14 @@ function TopicPanel({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Rag({ description, topic, sampleQuestions = [], stack = [] }: Props) {
+export default function Rag({
+  description,
+  topic,
+  sampleQuestions = [],
+  stack = [],
+  notices = [],
+  wakeup,
+}: Props) {
   const [sessionId, setSessionId]       = useState<string | null>(null);
   const [messages, setMessages]         = useState<Message[]>([]);
   const [logs, setLogs]                 = useState<LogEntryWithId[]>([]);
@@ -176,17 +260,24 @@ export default function Rag({ description, topic, sampleQuestions = [], stack = 
   const [isLoading, setIsLoading]       = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
 
-  const sessionIdRef = useRef<string | null>(null);
-  const chatEndRef   = useRef<HTMLDivElement>(null);
-  const logsEndRef   = useRef<HTMLDivElement>(null);
-  const logIdRef     = useRef(0);
-  const firstTsRef   = useRef<number | null>(null);
-  const textareaRef  = useRef<HTMLTextAreaElement>(null);
+  // ── Modal / server-wake state ──────────────────────────────
+  const [showModal, setShowModal]       = useState(true);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
+  const [redisStatus, setRedisStatus]   = useState<string | null>(null);
+  const [elapsedSecs, setElapsedSecs]   = useState(0);
+
+  const sessionIdRef  = useRef<string | null>(null);
+  const chatEndRef    = useRef<HTMLDivElement>(null);
+  const logsEndRef    = useRef<HTMLDivElement>(null);
+  const logIdRef      = useRef(0);
+  const firstTsRef    = useRef<number | null>(null);
+  const textareaRef   = useRef<HTMLTextAreaElement>(null);
 
   const tokenQueueRef = useRef<string[]>([]);
   const dripTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamDoneRef = useRef(false);
 
+  // ── Token drip ─────────────────────────────────────────────
   function startDrip() {
     if (dripTimerRef.current) return;
     dripTimerRef.current = setInterval(() => {
@@ -220,16 +311,50 @@ export default function Rag({ description, topic, sampleQuestions = [], stack = 
     streamDoneRef.current = false;
   }
 
+  // ── Elapsed timer (stops once online) ─────────────────────
   useEffect(() => {
-    async function init() {
-      try {
-        const id = await createSession();
-        setSessionId(id);
-        sessionIdRef.current = id;
-      } finally { setIsConnecting(false); }
+    if (serverStatus === 'online') return;
+    const t = setInterval(() => setElapsedSecs(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [serverStatus]);
+
+  // ── Health check → session init ────────────────────────────
+  // We wait for the server to confirm it's up before creating a session,
+  // so we never waste a createSession call against a sleeping backend.
+  useEffect(() => {
+    let cancelled = false;
+    let attempts  = 0;
+
+    async function tryConnect() {
+      if (cancelled) return;
+      const health = await checkHealth();
+      if (cancelled) return;
+
+      if (health) {
+        setServerStatus('online');
+        setRedisStatus(health.redis ?? null);
+        try {
+          const id = await createSession();
+          if (!cancelled) { setSessionId(id); sessionIdRef.current = id; }
+        } catch {
+          // session creation failure will surface naturally when user sends a message
+        } finally {
+          if (!cancelled) setIsConnecting(false);
+        }
+      } else {
+        attempts++;
+        if (attempts === 1) setServerStatus('waking');
+        if (!cancelled) setTimeout(tryConnect, 4000);
+      }
     }
-    init();
-    return () => { stopDrip(); if (sessionIdRef.current) deleteSession(sessionIdRef.current); };
+
+    tryConnect();
+
+    return () => {
+      cancelled = true;
+      stopDrip();
+      if (sessionIdRef.current) deleteSession(sessionIdRef.current);
+    };
   }, []);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -241,7 +366,6 @@ export default function Rag({ description, topic, sampleQuestions = [], stack = 
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
   };
 
-  // Called both from textarea submit and from question chip clicks
   const submitMessage = useCallback(async (msg: string) => {
     if (!msg.trim() || !sessionId || isLoading) return;
 
@@ -252,7 +376,7 @@ export default function Rag({ description, topic, sampleQuestions = [], stack = 
 
     setMessages(prev => [
       ...prev,
-      { role: 'user', content: msg },
+      { role: 'user',      content: msg },
       { role: 'assistant', content: '', isStreaming: true },
     ]);
     setIsLoading(true);
@@ -275,7 +399,7 @@ export default function Rag({ description, topic, sampleQuestions = [], stack = 
         );
       },
       onToken: (token) => { tokenQueueRef.current.push(token); startDrip(); },
-      onDone: (debug) => {
+      onDone:  (debug) => {
         streamDoneRef.current = true;
         if (debug) console.debug('[RAG done]', debug);
       },
@@ -293,15 +417,26 @@ export default function Rag({ description, topic, sampleQuestions = [], stack = 
     });
   }, [sessionId, isLoading]);
 
-  const handleSubmit = useCallback(() => submitMessage(input), [input, submitMessage]);
-
+  const handleSubmit  = useCallback(() => submitMessage(input), [input, submitMessage]);
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   };
 
-  // ─── Render ────────────────────────────────────────────────────────────────
+  // ─── Render ──────────────────────────────────────────────────────────────
   return (
     <div className={styles.shell}>
+
+      {/* ── Wake modal ── */}
+      {showModal && (
+        <RagWakeModal
+          serverStatus={serverStatus}
+          redisStatus={redisStatus}
+          elapsedSecs={elapsedSecs}
+          wakeup={wakeup}
+          notices={notices}
+          onContinue={() => setShowModal(false)}
+        />
+      )}
 
       {/* ── Left: Stack + Logs ── */}
       <aside className={styles.sidebar}>

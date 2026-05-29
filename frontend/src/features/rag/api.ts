@@ -1,5 +1,18 @@
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+export async function checkHealth(): Promise<{ status: string; redis: string } | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(`${BASE_URL}/`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function createSession(): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/session`, { method: 'POST' });
   const data = await res.json();

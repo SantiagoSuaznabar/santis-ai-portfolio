@@ -28,6 +28,8 @@ export default function App() {
           topic={activeModule?.topic}
           sampleQuestions={activeModule?.['sample questions']}
           stack={activeModule?.stack}
+          notices={activeModule?.notices}
+          wakeup={activeModule?.wakeup}
         />
       );
     }
