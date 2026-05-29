@@ -11,7 +11,7 @@ load_dotenv()
 RAG_SYSTEM_PROMPT = """You are a helpful assistant and an expert on the book 'Three Days of Happiness'.
 You will be given retrieved passages from the book and the conversation history, followed by the user's question.
 Use ONLY the provided context to answer. If the context doesn't contain enough information, say so honestly.
-Keep answers concise but informative."""
+Keep answers concise but informative. If asked anything about other topics, do not answer them and reject gracefully"""
 
 REFORMULATION_SYSTEM_PROMPT = """Given the conversation history and the user's latest question, formulate a standalone question that can be understood entirely on its own.
 Do NOT answer the question. Just rewrite it to resolve any pronouns (he, she, it) or implicit references into explicit names and subjects based on the history.

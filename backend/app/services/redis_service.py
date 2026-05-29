@@ -26,7 +26,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 load_dotenv()
 
 SEMANTIC_THRESHOLD = 0.92
-CACHE_TTL_SECONDS  = 60 * 60 * 24
+CACHE_TTL_SECONDS  = 60 * 60 * 2
 KEY_PREFIX         = "semantic_cache:"
 
 
@@ -40,7 +40,7 @@ class RedisService:
     def __init__(self):
         self.KEY_PREFIX = KEY_PREFIX
         self.redis = Redis.from_url(
-            os.getenv("REDIS_URL", "redis://localhost:6379"),
+            os.getenv("REDIS_URL"),
             decode_responses=True,
         )
         self.embeddings = GoogleGenerativeAIEmbeddings(
