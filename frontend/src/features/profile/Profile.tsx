@@ -1,6 +1,12 @@
 import type { FC } from 'react';
 import styles from './Profile.module.css';
 
+interface TechCategory {
+  category: string;
+  color: string;
+  items: string[];
+}
+
 interface ProfileData {
   name: string;
   title: string;
@@ -9,6 +15,7 @@ interface ProfileData {
   linkedin?: string;
   email?: string;
   avatar?: string;
+  techStack?: TechCategory[];
 }
 
 interface Module {
@@ -74,6 +81,36 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
         <section className={styles.bioSection}>
           <p className={styles.bio}>{profile.bio}</p>
         </section>
+
+        {/* ── Tech Stack ── */}
+        {profile.techStack && profile.techStack.length > 0 && (
+          <section className={styles.section}>
+            <h2 className={styles.sectionLabel}>Tech Stack</h2>
+            <div className={styles.techGrid}>
+              {profile.techStack.map(cat => (
+                <div key={cat.category} className={styles.techRow}>
+                  <span
+                    className={styles.techCategoryLabel}
+                    style={{ '--cat-color': cat.color } as React.CSSProperties}
+                  >
+                    {cat.category}
+                  </span>
+                  <div className={styles.techItems}>
+                    {cat.items.map(item => (
+                      <span
+                        key={item}
+                        className={styles.techPill}
+                        style={{ '--pill-color': cat.color } as React.CSSProperties}
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── Live modules ── */}
         {liveModules.length > 0 && (
@@ -142,7 +179,7 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
 
 export default Profile;
 
-// ── Inline icons (no extra dep) ───────────────────────────────────────────────
+// ── Inline icons ──────────────────────────────────────────────────────────────
 function GithubIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">

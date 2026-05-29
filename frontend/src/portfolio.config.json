@@ -1,12 +1,39 @@
 {
   "profile": {
-    "name": "Santiago Suaznabar ",
+    "name": "Santiago Suaznabar",
     "title": "Full-Stack Developer & AI Engineer",
-    "bio": "I build production AI systems - from retrieval pipelines and agents to the interfaces that make them legible. This portfolio is a live demo of that work.",
+    "bio": "I'm Santiago, a 24-year-old software developer from Cochabamba, Bolivia. I hold a degree in Computer Systems Engineering from Universidad Privada Boliviana (UPB), where I built a strong foundation in software architecture. My professional focus has been on full-stack web development, creating complete, end-to-end solutions. Driven by a constant curiosity for cutting-edge tech, I am currently diving deep into the AI space. I am actively exploring AI Engineering—specifically working with Retrieval-Augmented Generation (RAG), Large Language Models (LLMs), and autonomous agents to build smarter, more capable applications.",
     "github": "https://github.com/SantiagoSuaznabar",
     "linkedin": "https://linkedin.com/in/santi-suaznabar",
     "email": "suaznabar.santi.13@gmail.com",
-    "avatar": ""
+    "avatar": "",
+    "techStack": [
+      {
+        "category": "Frontend",
+        "color": "#3b82f6",
+        "items": ["React", "React Native", "Vite", "HTML", "CSS"]
+      },
+      {
+        "category": "Backend",
+        "color": "#10b981",
+        "items": ["FastAPI", "NestJS", "NodeJS", ".NET", "Express", "BullMQ", "Redis"]
+      },
+      {
+        "category": "LLM / AI",
+        "color": "#8b5cf6",
+        "items": ["Scikitlearn", "LangChain", "LangGraph", "LangSmith", "Qdrant", "Redis Semantic Cache", "NLTK", "Ragas", "Pydantic"]
+      },
+      {
+        "category": "Databases",
+        "color": "#ef4444",
+        "items": ["PostgreSQL", "MySQL", "SQL Server", "Redis", "Qdrant"]
+      },
+      {
+        "category": "Version Control & DevOps",
+        "color": "#3b82f6",
+        "items": ["Git", "Github", "Docker", "Docker Swarm", "Github Actions"]
+      }
+    ]
   },
   "modules": [
     {
@@ -22,7 +49,6 @@
       "sample questions": [
         "What is the name of the main character?",
         "How much money was his lifespan worth?",
-        "What was its original value?",
         "Why did Himeno reach out again?",
         "Why Miyagi ended up as an observer?",
         "What does Miyagi and Kusunoki do in the end?"
@@ -48,7 +74,7 @@
           "detail": "Responses use a personal free-tier Gemini key. Heavy usage may hit daily token limits."
         },
         {
-          "icon": "🗄",
+          "icon": "📖",
           "label": "Topic",
           "detail": "The Vector Store was fed with the book 'Three Days of Happiness'"
         }

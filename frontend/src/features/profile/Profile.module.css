@@ -261,3 +261,63 @@
   .name { font-size: 22px; }
   .moduleGrid { grid-template-columns: 1fr; }
 }
+/* ─── Tech Stack ──────────────────────────────────────────── */
+.techGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.techRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.techCategoryLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cat-color, var(--text-faint));
+  width: 76px;
+  flex-shrink: 0;
+  padding-top: 4px;
+  line-height: 1;
+}
+
+.techItems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  flex: 1;
+}
+
+.techPill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--pill-color, #3b82f6) 10%, transparent);
+  color: var(--pill-color, #3b82f6);
+  border: 1px solid color-mix(in srgb, var(--pill-color, #3b82f6) 22%, transparent);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.techPill:hover {
+  background: color-mix(in srgb, var(--pill-color, #3b82f6) 18%, transparent);
+  border-color: color-mix(in srgb, var(--pill-color, #3b82f6) 35%, transparent);
+}
+
+/* ── Mobile ── */
+@media (max-width: 480px) {
+  .techRow {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .techCategoryLabel {
+    width: auto;
+    padding-top: 0;
+  }
+}
