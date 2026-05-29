@@ -29,6 +29,8 @@ from app.services.log_capture import capture_logs
 load_dotenv()
 redis_url = os.getenv("REDIS_URL", "memory://")
 limiter = Limiter(key_func=get_remote_address, storage_uri=redis_url)
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS")
+origins = [origin.strip() for origin in allowed_origins_raw.split(",") if origin.strip()]
 
 app = FastAPI(
     title="AI Portfolio Backend",
@@ -41,7 +43,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
