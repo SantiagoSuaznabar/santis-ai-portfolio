@@ -1,0 +1,163 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
+
+/* ─── Design tokens ───────────────────────────────────────── */
+:root {
+  --bg-base:       #0a0c0f;
+  --bg-surface:    #0d0f13;
+  --bg-raised:     #131720;
+  --border:        #1e2330;
+  --border-subtle: #161a24;
+  --text-primary:  #f1f5f9;
+  --text-secondary:#cbd5e1;
+  --text-muted:    #4a5568;
+  --text-faint:    #2d3748;
+  --accent:        #3b82f6;
+  --accent-dim:    rgba(59,130,246,0.12);
+  --accent-glow:   rgba(59,130,246,0.08);
+  --green:         #10b981;
+  --amber:         #f59e0b;
+  --red:           #ef4444;
+  --font-sans:     'Syne', sans-serif;
+  --font-mono:     'JetBrains Mono', monospace;
+  --nav-h:         52px;
+}
+
+/* ─── Reset ───────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  background: var(--bg-base);
+  overflow: hidden;
+  font-family: var(--font-sans);
+  color: var(--text-secondary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Top Nav ─────────────────────────────────────────────── */
+.portfolio-nav {
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  gap: 8px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.portfolio-nav__wordmark {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  margin-right: 16px;
+  white-space: nowrap;
+}
+
+.portfolio-nav__divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.portfolio-nav__tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.portfolio-nav__tab:hover:not(.portfolio-nav__tab--disabled) {
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.04);
+}
+
+.portfolio-nav__tab--active {
+  color: var(--text-primary);
+  background: var(--accent-dim);
+  border-color: rgba(59,130,246,0.2);
+}
+
+.portfolio-nav__tab--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.portfolio-nav__pip {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.portfolio-nav__tab--active .portfolio-nav__pip {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+}
+
+.portfolio-nav__badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.05);
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+
+/* ─── Page shell ──────────────────────────────────────────── */
+.portfolio-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+.portfolio-view {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  min-height: 0;
+}
+
+/* ─── Shared scrollbar style ──────────────────────────────── */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.scroll-thin::-webkit-scrollbar { width: 4px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ─── Mobile graceful ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  .portfolio-nav {
+    padding: 0 14px;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .portfolio-nav::-webkit-scrollbar { display: none; }
+  .portfolio-nav__wordmark { font-size: 13px; margin-right: 8px; }
+  .portfolio-nav__tab { padding: 5px 9px; font-size: 12px; }
+}

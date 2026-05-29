@@ -15,8 +15,18 @@ type Message = {
 
 type LogEntryWithId = LogEvent & { id: number; relativeTs?: string };
 
-// ─── Token drip speed (ms between tokens being painted) ──────────────────────
-// Raise this to slow down the visible stream for portfolio demos.
+interface StackItem {
+  name: string;
+  role: string;
+  color?: string;
+}
+
+interface Props {
+  description?: string;
+  stack?: StackItem[];
+}
+
+// Token drip speed — raise to slow down visible streaming
 const TOKEN_DRIP_MS = 35;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -25,13 +35,9 @@ function LogLine({ log }: { log: LogEntryWithId }) {
   return (
     <div className={`${styles.logEntry} ${styles[`level-${log.level}`]}`}>
       <div className={styles.logMeta}>
-        <span className={`${styles.logBadge} ${styles[`level-${log.level}`]}`}>
-          {log.level}
-        </span>
+        <span className={`${styles.logBadge} ${styles[`level-${log.level}`]}`}>{log.level}</span>
         <span className={styles.logModule}>{log.module}</span>
-        {log.relativeTs && (
-          <span className={styles.logTs}>{log.relativeTs}</span>
-        )}
+        {log.relativeTs && <span className={styles.logTs}>{log.relativeTs}</span>}
       </div>
       <div className={styles.logMessage}>{log.message}</div>
     </div>
@@ -65,7 +71,6 @@ function MessageBubble({ msg }: { msg: Message }) {
       </div>
     );
   }
-
   if (msg.isError) {
     return (
       <div className={`${styles.messageRow} ${styles.assistant}`}>
@@ -74,14 +79,11 @@ function MessageBubble({ msg }: { msg: Message }) {
       </div>
     );
   }
-
   return (
     <div className={`${styles.messageRow} ${styles.assistant}`}>
       <div className={styles.roleLabel}>RAG</div>
       <div className={styles.messageBubble}>
-        {msg.fromCache && (
-          <div className={styles.cacheBadge}>⚡ cached response</div>
-        )}
+        {msg.fromCache && <div className={styles.cacheBadge}>⚡ cached response</div>}
         <span>
           {msg.content}
           {msg.isStreaming && <span className={styles.streamCursor} />}
@@ -94,46 +96,39 @@ function MessageBubble({ msg }: { msg: Message }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Rag() {
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [logs, setLogs] = useState<LogEntryWithId[]>([]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+export default function Rag({ description, stack = [] }: Props) {
+  const [sessionId, setSessionId]   = useState<string | null>(null);
+  const [messages, setMessages]     = useState<Message[]>([]);
+  const [logs, setLogs]             = useState<LogEntryWithId[]>([]);
+  const [input, setInput]           = useState('');
+  const [isLoading, setIsLoading]   = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
 
-  const sessionIdRef = useRef<string | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const logsEndRef = useRef<HTMLDivElement>(null);
-  const logIdRef = useRef(0);
-  const firstTsRef = useRef<number | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sessionIdRef  = useRef<string | null>(null);
+  const chatEndRef    = useRef<HTMLDivElement>(null);
+  const logsEndRef    = useRef<HTMLDivElement>(null);
+  const logIdRef      = useRef(0);
+  const firstTsRef    = useRef<number | null>(null);
+  const textareaRef   = useRef<HTMLTextAreaElement>(null);
 
-  // ── Token drip queue ──
-  // Tokens from the network go into this queue; a setInterval drains them
-  // one-at-a-time at TOKEN_DRIP_MS pace. This decouples React state updates
-  // from the raw SSE cadence and fixes the StrictMode double-invoke duplicate bug
-  // (the queue is external to React, so double-calling the updater is harmless).
-  const tokenQueueRef = useRef<string[]>([]);
-  const dripTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const streamDoneRef = useRef(false); // set when onDone fires
+  // Token drip queue — decouples SSE cadence from React renders
+  const tokenQueueRef  = useRef<string[]>([]);
+  const dripTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamDoneRef  = useRef(false);
 
   function startDrip() {
-    if (dripTimerRef.current) return; // already running
+    if (dripTimerRef.current) return;
     dripTimerRef.current = setInterval(() => {
       const token = tokenQueueRef.current.shift();
       if (token !== undefined) {
-        // Safe: we only read prev.content and rebuild, never mutate in place
-        setMessages(prev => {
-          const next = prev.map((m, i) =>
+        setMessages(prev =>
+          prev.map((m, i) =>
             i === prev.length - 1 && m.role === 'assistant'
               ? { ...m, content: m.content + token }
               : m
-          );
-          return next;
-        });
+          )
+        );
       } else if (streamDoneRef.current) {
-        // Queue drained AND stream finished — mark bubble complete
         clearInterval(dripTimerRef.current!);
         dripTimerRef.current = null;
         setIsLoading(false);
@@ -149,58 +144,39 @@ export default function Rag() {
   }
 
   function stopDrip() {
-    if (dripTimerRef.current) {
-      clearInterval(dripTimerRef.current);
-      dripTimerRef.current = null;
-    }
+    if (dripTimerRef.current) { clearInterval(dripTimerRef.current); dripTimerRef.current = null; }
     tokenQueueRef.current = [];
     streamDoneRef.current = false;
   }
 
-  // ── Session lifecycle ──
+  // Session lifecycle
   useEffect(() => {
-    async function initSession() {
+    async function init() {
       try {
         const id = await createSession();
         setSessionId(id);
         sessionIdRef.current = id;
-      } finally {
-        setIsConnecting(false);
-      }
+      } finally { setIsConnecting(false); }
     }
-    initSession();
-    return () => {
-      stopDrip();
-      if (sessionIdRef.current) deleteSession(sessionIdRef.current);
-    };
+    init();
+    return () => { stopDrip(); if (sessionIdRef.current) deleteSession(sessionIdRef.current); };
   }, []);
 
-  // ── Auto-scroll chat ──
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
-  // ── Auto-scroll logs ──
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
-
-  // ── Auto-resize textarea ──
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
   };
 
-  // ── Send message ──
   const handleSubmit = useCallback(async () => {
     const userMsg = input.trim();
     if (!userMsg || !sessionId || isLoading) return;
 
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-
-    // Reset stream state
     stopDrip();
     firstTsRef.current = null;
 
@@ -219,9 +195,7 @@ export default function Rag() {
         const relativeTs = ms < 1000 ? `+${ms}ms` : `+${(ms / 1000).toFixed(1)}s`;
         setLogs(prev => [...prev, { ...log, id, relativeTs }]);
       },
-
       onMeta: (meta) => {
-        // Pure replacement — no mutation
         setMessages(prev =>
           prev.map((m, i) =>
             i === prev.length - 1 && m.role === 'assistant'
@@ -230,29 +204,18 @@ export default function Rag() {
           )
         );
       },
-
-      onToken: (token) => {
-        // Push to queue — DO NOT touch React state here
-        tokenQueueRef.current.push(token);
-        startDrip();
-      },
-
+      onToken: (token) => { tokenQueueRef.current.push(token); startDrip(); },
       onDone: (debug) => {
-        // Signal drip loop to finalize once queue is empty
         streamDoneRef.current = true;
         if (debug) console.debug('[RAG done]', debug);
       },
-
       onError: (err) => {
         stopDrip();
         setIsLoading(false);
         setMessages(prev => {
           const last = prev[prev.length - 1];
           if (last?.role === 'assistant' && last.isStreaming) {
-            return [
-              ...prev.slice(0, -1),
-              { role: 'assistant', content: err, isError: true },
-            ];
+            return [...prev.slice(0, -1), { role: 'assistant', content: err, isError: true }];
           }
           return [...prev, { role: 'assistant', content: err, isError: true }];
         });
@@ -261,60 +224,74 @@ export default function Rag() {
   }, [input, sessionId, isLoading]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   };
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className={styles.shell}>
 
-      {/* ── Left: Terminal Logs ── */}
-      <aside className={styles.logsPanel}>
-        <div className={styles.logsPanelHeader}>
-          <span className={styles.termDot} />
-          <span className={styles.termDot} />
-          <span className={styles.termDot} />
-          <span className={styles.logsPanelTitle}>Pipeline Logs</span>
-        </div>
+      {/* ── Left sidebar: stack info + logs ── */}
+      <aside className={styles.sidebar}>
 
-        <div className={styles.logsScroll}>
-          {logs.length === 0 ? (
-            <div className={styles.logsEmpty}>
-              <span className={styles.logsEmptyIcon}>⬡</span>
-              <span>Awaiting events…</span>
-            </div>
-          ) : (
-            logs.map(log => <LogLine key={log.id} log={log} />)
+        {/* Stack info */}
+        <div className={styles.sideSection}>
+          <div className={styles.sideSectionHeader}>
+            <span className={styles.termDot} />
+            <span className={styles.termDot} />
+            <span className={styles.termDot} />
+            <span className={styles.sideSectionTitle}>Stack</span>
+          </div>
+
+          {description && (
+            <p className={styles.moduleDesc}>{description}</p>
           )}
-          <div ref={logsEndRef} />
+
+          {stack.length > 0 && (
+            <div className={styles.stackList}>
+              {stack.map(s => (
+                <div key={s.name} className={styles.stackItem}>
+                  <span
+                    className={styles.stackDot}
+                    style={{ background: s.color || '#3b82f6' }}
+                  />
+                  <span className={styles.stackName}>{s.name}</span>
+                  <span className={styles.stackRole}>{s.role}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
+        {/* Logs */}
+        <div className={styles.sideSection} style={{ flex: 1, minHeight: 0 }}>
+          <div className={styles.sideSectionHeader}>
+            <span className={styles.sideSectionTitle}>Pipeline Logs</span>
+          </div>
+
+          <div className={`${styles.logsScroll} scroll-thin`}>
+            {logs.length === 0 ? (
+              <div className={styles.logsEmpty}>
+                <span className={styles.logsEmptyIcon}>⬡</span>
+                <span>Awaiting events…</span>
+              </div>
+            ) : (
+              logs.map(log => <LogLine key={log.id} log={log} />)
+            )}
+            <div ref={logsEndRef} />
+          </div>
+        </div>
+
+        {/* Status bar */}
         <div className={styles.statusBar}>
           <span className={`${styles.statusDot} ${isConnecting ? styles.connecting : ''}`} />
-          {isConnecting
-            ? 'connecting…'
-            : sessionId
-              ? `session ${sessionId.slice(0, 8)}…`
-              : 'no session'}
+          {isConnecting ? 'connecting…' : sessionId ? `session ${sessionId.slice(0, 8)}…` : 'no session'}
         </div>
       </aside>
 
       {/* ── Right: Chat ── */}
       <section className={styles.chatPanel}>
-        <header className={styles.chatHeader}>
-          <div className={styles.chatHeaderLeft}>
-            <div className={styles.chatHeaderIcon}>⬡</div>
-            <div>
-              <div className={styles.chatHeaderTitle}>Simple RAG</div>
-              <div className={styles.chatHeaderSub}>vector · hybrid retrieval · semantic cache</div>
-            </div>
-          </div>
-        </header>
-
-        <div className={styles.chatWindow}>
+        <div className={`${styles.chatWindow} scroll-thin`}>
           {messages.length === 0 ? (
             <div className={styles.welcomeScreen}>
               <div className={styles.welcomeOrb}>⬡</div>
@@ -329,13 +306,10 @@ export default function Rag() {
 
           {isLoading && messages[messages.length - 1]?.content === '' && (
             <div className={styles.thinking}>
-              <div className={styles.thinkingDots}>
-                <span /><span /><span />
-              </div>
+              <div className={styles.thinkingDots}><span /><span /><span /></div>
               Retrieving context…
             </div>
           )}
-
           <div ref={chatEndRef} />
         </div>
 

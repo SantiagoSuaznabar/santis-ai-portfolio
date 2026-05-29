@@ -1,0 +1,49 @@
+{
+  "profile": {
+    "name": "Santiago Suaznabar ",
+    "title": "Full-Stack Developer & AI Engineer",
+    "bio": "I build production AI systems - from retrieval pipelines and agents to the interfaces that make them legible. This portfolio is a live demo of that work.",
+    "github": "https://github.com/SantiagoSuaznabar",
+    "linkedin": "https://linkedin.com/in/santi-suaznabar",
+    "email": "suaznabar.santi.13@gmail.com",
+    "avatar": ""
+  },
+  "modules": [
+    {
+      "id": "rag",
+      "label": "RAG",
+      "status": "live",
+      "description": "A retrieval-augmented generation pipeline, using Redis as the semantic cache, Qdrant as the vector store with a Hybrid Search as a retrieval strategy(One dense vector and one sparse vector), applied a Query Reformulator before making the search.",
+      "about the topic": "The vector store was fed with one of my favorite Novel/Book/Manga: 'Three Days of Happiness' or 'I sold my lifespan for 300k yen' by Sugaru Miaki",
+      "sample questions": [
+        "What is the name of the main character?",
+        "How much money was his lifespan worth?",
+        "What was its original value?",
+        "Why did Himeno reach out again?",
+        "Why Miyagi ended up as an observer?",
+        "What does Miyagi and Kusunoki do in the end?"
+      ],
+      "stack": [
+        { "name": "Qdrant",        "role": "Vector store",        "color": "#7c3aed" },
+        { "name": "Redis",         "role": "Semantic cache",      "color": "#dc2626" },
+        { "name": "FastAPI",       "role": "Backend",             "color": "#059669" },
+        { "name": "Hybrid Search", "role": "Retrieval strategy",  "color": "#2563eb" },
+        { "name": "Gemini",        "role": "LLM",                 "color": "#d97706" }
+      ]
+    },
+    {
+      "id": "agent",
+      "label": "Agent",
+      "status": "coming-soon",
+      "description": "An agentic loop with tool use — web search, code execution, and multi-step planning.",
+      "stack": []
+    },
+    {
+      "id": "sandbox",
+      "label": "Sandbox",
+      "status": "coming-soon",
+      "description": "An open scratchpad for experimental AI interfaces.",
+      "stack": []
+    }
+  ]
+}
