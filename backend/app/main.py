@@ -32,10 +32,16 @@ limiter = Limiter(key_func=get_remote_address, storage_uri=redis_url)
 allowed_origins_raw = os.getenv("ALLOWED_ORIGINS")
 origins = [origin.strip() for origin in allowed_origins_raw.split(",") if origin.strip()]
 
+_is_prod = os.getenv("ENV_MODE").lower() == "production"
+
 app = FastAPI(
     title="AI Portfolio Backend",
     description="RAG chatbot — hybrid search + semantic cache",
     version="1.0.0",
+    # Disable interactive docs in production — no need to expose the schema publicly
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
 
 app.state.limiter = limiter
@@ -149,14 +155,16 @@ async def root():
 # ── Test chat ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/chat/test", response_model=ChatResponse)
-async def test_chat(request: ChatRequest):
-    return ChatResponse(response=await llm_service.get_simple_response(request.message))
+@limiter.limit("10/minute")
+async def test_chat(request: Request, body: ChatRequest):
+    return ChatResponse(response=await llm_service.get_simple_response(body.message))
 
 
 # ── Session management ────────────────────────────────────────────────────────
 
 @app.post("/api/session", response_model=SessionCreateResponse, status_code=201)
-async def create_session():
+@limiter.limit("20/minute")
+async def create_session(request: Request):
     return SessionCreateResponse(**session_store.create_session())
 
 
@@ -198,7 +206,8 @@ async def list_cache():
 
 
 @app.delete("/api/cache", response_model=CacheDeleteResponse)
-async def clear_cache():
+@limiter.limit("5/minute")
+async def clear_cache(request: Request):
     """Delete ALL cache entries."""
     deleted = redis_service.delete()
     return CacheDeleteResponse(deleted_keys=deleted, deleted_count=len(deleted))
@@ -581,7 +590,8 @@ async def rag_chat_stream(request: Request, body: RAGRequest):
 # ── Cache debug ───────────────────────────────────────────────────────────────
 
 @app.get("/api/cache/debug")
-async def debug_cache(q: str):
+@limiter.limit("10/minute")
+async def debug_cache(request: Request, q: str):
     """
     Low-level cache probe. Pass the exact query string as ?q=...
     Returns for every stored entry:
