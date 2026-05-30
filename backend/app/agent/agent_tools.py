@@ -3,20 +3,14 @@ agent_tools.py
 ──────────────
 LangChain tool definitions consumed by the agent nodes.
 
-Each tool is decorated with @tool so LangGraph / LangChain can bind it to
-a model via llm.bind_tools([...]).
-
 Tools defined here:
-  rag_search_tool        — cache-aware hybrid RAG (reuses existing services)
-  brave_web_search_tool  — Brave Search MCP / REST wrapper (stub)
-  evaluate_math_tool     — safe Python expression evaluator
+  rag_search_tool   — cache-aware hybrid RAG (reuses existing services)
+  evaluate_math_tool — safe Python expression evaluator
 
-Design notes:
-  • Tools are plain async functions. Nodes decide when and how to call them.
-  • Heavy service imports (qdrant, redis) are deferred inside the functions so
-    the module can be imported without a live DB connection (useful in tests).
-  • evaluate_math_tool uses `asteval` instead of eval() to avoid arbitrary
-    code execution. Install: pip install asteval
+Note on Brave Search:
+  Brave is consumed via MCP in web_search_node (agent_nodes.py), not as a
+  @tool here. The MCP client returns LangChain-compatible tools at runtime,
+  so there is nothing to define statically in this file for web search.
 """
 
 from __future__ import annotations
@@ -60,7 +54,7 @@ async def rag_search_tool(query: str) -> dict:
             return {
                 "from_cache": True,
                 "cache_key": cache_result["cache_key"],
-                "chunks": cache_result["results"],    # already in chunk-dict format
+                "chunks": cache_result["results"],
                 "cached_response": cache_result["response"],
                 "retrieval_latency_ms": 0.0,
             }
@@ -81,48 +75,9 @@ async def rag_search_tool(query: str) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2.  Brave web search tool
+# 2.  Math evaluator tool
 # ─────────────────────────────────────────────────────────────────────────────
 
-@tool
-async def brave_web_search_tool(query: str, count: int = 5) -> dict:
-    """
-    Search the web using the Brave Search API.
-
-    Args:
-        query: The search query string.
-        count: Number of results to return (default 5, max 10).
-
-    Returns:
-        {
-            "results": [{"title", "url", "description"}],
-            "query":   str,
-        }
-    """
-    # TODO: Implement Brave Search API call.
-    #
-    # Option A — direct REST (simplest):
-    #   POST https://api.search.brave.com/res/v1/web/search
-    #   Headers: {"Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY}
-    #   Params:  {"q": query, "count": count}
-    #   Parse:   response["web"]["results"] → [{title, url, description}]
-    #
-    # Option B — Brave MCP server (if you want to go the MCP route):
-    #   The Brave MCP server exposes brave_web_search and brave_local_search.
-    #   You'd configure it in your LangGraph node via mcp_servers=[...] instead
-    #   of binding it as a @tool, but the node logic stays the same.
-    #
-    # Free tier: 2,000 queries/month — plenty for a portfolio project.
-    # Sign up: https://brave.com/search/api/
-
-    raise NotImplementedError("Brave Search tool not yet implemented. See TODO above.")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3.  Math evaluator tool
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Safe operator whitelist for the AST-based evaluator
 _SAFE_OPERATORS: dict = {
     ast.Add:  operator.add,
     ast.Sub:  operator.sub,
@@ -159,9 +114,7 @@ def _safe_eval(node: ast.AST) -> float | int:
     if isinstance(node, ast.Name) and node.id in _SAFE_FUNCTIONS:
         return _SAFE_FUNCTIONS[node.id]          # type: ignore[return-value]
     if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_OPERATORS:
-        left  = _safe_eval(node.left)
-        right = _safe_eval(node.right)
-        return _SAFE_OPERATORS[type(node.op)](left, right)
+        return _SAFE_OPERATORS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
     if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_OPERATORS:
         return _SAFE_OPERATORS[type(node.op)](_safe_eval(node.operand))
     if isinstance(node, ast.Call):
@@ -180,9 +133,6 @@ def evaluate_math_tool(expression: str) -> dict:
     Supports: +, -, *, /, **, %, unary minus/plus, and common math functions
     (abs, round, sqrt, log, log10, sin, cos, tan, floor, ceil) plus constants
     pi and e.
-
-    Does NOT support: assignments, imports, builtins, string ops, or any
-    arbitrary Python — those raise a ValueError.
 
     Args:
         expression: A math expression string, e.g. "sqrt(2) * pi" or "2**10".
@@ -204,6 +154,5 @@ def evaluate_math_tool(expression: str) -> dict:
 
 # ── Export list for node imports ──────────────────────────────────────────────
 
-RAG_TOOLS        = [rag_search_tool]
-WEB_SEARCH_TOOLS = [brave_web_search_tool]
-MATH_TOOLS       = [evaluate_math_tool]
+RAG_TOOLS  = [rag_search_tool]
+MATH_TOOLS = [evaluate_math_tool]
