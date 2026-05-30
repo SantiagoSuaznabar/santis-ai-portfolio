@@ -6,9 +6,9 @@
   scrollbar-color: var(--border) transparent;
   background: var(--bg-base);
 }
-.page::-webkit-scrollbar        { width: 4px; }
-.page::-webkit-scrollbar-track  { background: transparent; }
-.page::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 2px; }
+.page::-webkit-scrollbar       { width: 4px; }
+.page::-webkit-scrollbar-track { background: transparent; }
+.page::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 /* ─── Inner container ─────────────────────────────────────── */
 .inner {
@@ -18,7 +18,7 @@
   padding: 48px 48px 80px;
   display: flex;
   flex-direction: column;
-  gap: 48px;
+  gap: 40px;
   opacity: 0;
   animation: pageIn 0.5s ease-out 0.05s forwards;
 }
@@ -28,22 +28,20 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ─── Layout primitives ───────────────────────────────────── */
-.twoColRow {
+/* ─── Main two-column grid ────────────────────────────────── */
+.mainGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   column-gap: 56px;
   align-items: start;
 }
 
-/* Single child spans both columns */
-.twoColRow > *:only-child { grid-column: 1 / -1; }
-
+/* Each column stacks its sections vertically */
 .leftCol,
 .rightCol {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 40px;
 }
 
 .leftCol {
@@ -51,7 +49,8 @@
   padding-right: 56px;
 }
 
-.fullRow {
+/* A section inside a column: label + content */
+.colSection {
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -67,7 +66,7 @@
   color: var(--text-faint);
 }
 
-/* Label + inline controls on the same row */
+/* Label + inline controls on the same row (used by certs) */
 .sectionHeaderRow {
   display: flex;
   align-items: center;
@@ -80,11 +79,11 @@
   align-items: center;
   gap: 24px;
   flex-wrap: wrap;
-  padding-bottom: 48px;
+  padding-bottom: 40px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.avatarWrap  { position: relative; flex-shrink: 0; }
+.avatarWrap { position: relative; flex-shrink: 0; }
 
 .avatarImg,
 .avatarFallback {
@@ -164,22 +163,20 @@
 }
 
 /* ─── Tech Stack ──────────────────────────────────────────── */
-/* Vertical layout: category label on top, pills below.        */
-/* Handles any category name length cleanly.                   */
 .techGrid {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 
 .techRow {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 0;
+  padding: 11px 0;
   border-bottom: 1px solid var(--border-subtle);
 }
-.techRow:last-child { border-bottom: none; }
+.techRow:last-child { border-bottom: none; padding-bottom: 0; }
+.techRow:first-child { padding-top: 0; }
 
 .techCategoryLabel {
   font-family: var(--font-mono);
@@ -190,11 +187,7 @@
   color: var(--cat-color, var(--text-faint));
 }
 
-.techItems {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
+.techItems { display: flex; flex-wrap: wrap; gap: 5px; }
 
 .techPill {
   font-family: var(--font-mono);
@@ -241,8 +234,6 @@
 }
 
 /* ─── Certifications ──────────────────────────────────────── */
-
-/* Pagination controls — inline with the section label */
 .certPagination {
   display: flex;
   align-items: center;
@@ -260,9 +251,9 @@
   border-radius: 5px;
   color: var(--text-muted);
   font-size: 13px;
+  font-family: var(--font-mono);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
-  font-family: var(--font-mono);
   line-height: 1;
 }
 .certPageBtn:not(:disabled):hover {
@@ -270,10 +261,7 @@
   border-color: rgba(255,255,255,0.15);
   background: rgba(255,255,255,0.05);
 }
-.certPageBtn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
+.certPageBtn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .certPageInfo {
   font-family: var(--font-mono);
@@ -309,8 +297,8 @@ a.certCard:hover {
   border-color: rgba(59,130,246,0.35);
   background: rgba(59,130,246,0.04);
 }
-
-a.certCard:hover .certName { color: var(--accent); }
+a.certCard:hover .certName    { color: var(--accent); }
+a.certCard:hover .certLinkIcon { color: var(--accent); }
 
 .certCardNoLink { cursor: default; }
 
@@ -319,13 +307,11 @@ a.certCard:hover .certName { color: var(--accent); }
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.45;
-  /* Clamp to 3 lines max so cards stay uniform */
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   transition: color 0.15s;
-  /* leave room for link icon */
   padding-right: 18px;
 }
 
@@ -338,22 +324,19 @@ a.certCard:hover .certName { color: var(--accent); }
   text-overflow: ellipsis;
 }
 
-/* External link icon: top-right corner */
 .certLinkIcon {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 10px; right: 10px;
   color: var(--text-faint);
   display: flex;
   align-items: center;
   transition: color 0.15s;
 }
-a.certCard:hover .certLinkIcon { color: var(--accent); }
 
 /* ─── Module cards ────────────────────────────────────────── */
 .moduleGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
 }
 
@@ -448,25 +431,26 @@ a.certCard:hover .certLinkIcon { color: var(--accent); }
 @media (max-width: 768px) {
   .inner {
     padding: 32px 18px 60px;
-    gap: 36px;
+    gap: 32px;
   }
 
-  .twoColRow {
-    grid-template-columns: 1fr;
-    gap: 36px;
-  }
+  /* Stack columns vertically; left col gets a bottom border instead */
+  .mainGrid { grid-template-columns: 1fr; gap: 0; }
 
-  /* On mobile the right border becomes a bottom border */
   .leftCol {
     border-right: none;
     padding-right: 0;
     border-bottom: 1px solid var(--border-subtle);
-    padding-bottom: 36px;
+    padding-bottom: 32px;
+    margin-bottom: 32px;
+    gap: 32px;
   }
 
-  .hero { padding-bottom: 32px; }
-  .name { font-size: 22px; }
+  .rightCol { gap: 32px; }
 
-  .certPageGrid { grid-template-columns: 1fr; }
-  .moduleGrid   { grid-template-columns: 1fr; }
+  .hero  { padding-bottom: 28px; }
+  .name  { font-size: 22px; }
+
+  .certPageGrid  { grid-template-columns: 1fr; }
+  .moduleGrid    { grid-template-columns: 1fr; }
 }

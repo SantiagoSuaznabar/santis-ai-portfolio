@@ -59,22 +59,25 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
   const liveModules = modules.filter(m => m.status === 'live');
   const soonModules = modules.filter(m => m.status === 'coming-soon');
 
-  const hasTech  = (profile.techStack?.length   ?? 0) > 0;
-  const hasLangs = (profile.languages?.length   ?? 0) > 0;
+  const hasTech  = (profile.techStack?.length    ?? 0) > 0;
+  const hasLangs = (profile.languages?.length    ?? 0) > 0;
   const hasCerts = (profile.certifications?.length ?? 0) > 0;
 
   const totalCertPages = hasCerts
     ? Math.ceil(profile.certifications!.length / CERTS_PER_PAGE)
     : 0;
   const visibleCerts = hasCerts
-    ? profile.certifications!.slice(certPage * CERTS_PER_PAGE, (certPage + 1) * CERTS_PER_PAGE)
+    ? profile.certifications!.slice(
+        certPage * CERTS_PER_PAGE,
+        (certPage + 1) * CERTS_PER_PAGE
+      )
     : [];
 
   return (
     <div className={styles.page}>
       <div className={styles.inner}>
 
-        {/* ── Hero ── */}
+        {/* ── Hero (full width) ── */}
         <section className={styles.hero}>
           <div className={styles.avatarWrap}>
             {profile.avatar
@@ -108,49 +111,109 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
           </div>
         </section>
 
-        {/* ── Row 1: Bio + Tech Stack ── */}
-        <div className={styles.twoColRow}>
-          <section className={styles.leftCol}>
-            <h2 className={styles.sectionLabel}>About</h2>
-            <p className={styles.bio}>{profile.bio}</p>
-          </section>
+        {/* ── Main two-column grid ── */}
+        <div className={styles.mainGrid}>
 
-          {hasTech && (
-            <section className={styles.rightCol}>
-              <h2 className={styles.sectionLabel}>Tech Stack</h2>
-              <div className={styles.techGrid}>
-                {profile.techStack!.map(cat => (
-                  <div key={cat.category} className={styles.techRow}>
-                    <span
-                      className={styles.techCategoryLabel}
-                      style={{ '--cat-color': cat.color } as React.CSSProperties}
+          {/* ── LEFT: About → Live Demos → Coming Soon ── */}
+          <div className={styles.leftCol}>
+
+            <div className={styles.colSection}>
+              <h2 className={styles.sectionLabel}>About</h2>
+              <p className={styles.bio}>{profile.bio}</p>
+            </div>
+
+            {liveModules.length > 0 && (
+              <div className={styles.colSection}>
+                <h2 className={styles.sectionLabel}>Live demos</h2>
+                <div className={styles.moduleGrid}>
+                  {liveModules.map(m => (
+                    <button
+                      key={m.id}
+                      className={styles.moduleCard}
+                      onClick={() => onNavigate(m.id)}
                     >
-                      {cat.category}
-                    </span>
-                    <div className={styles.techItems}>
-                      {cat.items.map(item => (
-                        <span
-                          key={item}
-                          className={styles.techPill}
-                          style={{ '--pill-color': cat.color } as React.CSSProperties}
-                        >
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                      <div className={styles.moduleCardTop}>
+                        <span className={styles.moduleCardLabel}>{m.label}</span>
+                        <span className={styles.liveChip}>live</span>
+                      </div>
+                      {m.description && (
+                        <p className={styles.moduleCardDesc}>{m.description}</p>
+                      )}
+                      {m.stack && m.stack.length > 0 && (
+                        <div className={styles.moduleCardStack}>
+                          {m.stack.map(s => (
+                            <span
+                              key={s.name}
+                              className={styles.stackPill}
+                              style={{ '--pill-color': s.color || '#3b82f6' } as React.CSSProperties}
+                            >
+                              {s.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div className={styles.moduleCardCta}>Open demo <ArrowIcon /></div>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </section>
-          )}
-        </div>
+            )}
 
-        {/* ── Row 2: Languages + Certifications ── */}
-        {(hasLangs || hasCerts) && (
-          <div className={styles.twoColRow}>
+            {soonModules.length > 0 && (
+              <div className={styles.colSection}>
+                <h2 className={styles.sectionLabel}>Coming soon</h2>
+                <div className={styles.moduleGrid}>
+                  {soonModules.map(m => (
+                    <div key={m.id} className={`${styles.moduleCard} ${styles.moduleCardDim}`}>
+                      <div className={styles.moduleCardTop}>
+                        <span className={styles.moduleCardLabel}>{m.label}</span>
+                        <span className={styles.soonChip}>soon</span>
+                      </div>
+                      {m.description && (
+                        <p className={styles.moduleCardDesc}>{m.description}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* ── RIGHT: Tech Stack → Languages → Certifications ── */}
+          <div className={styles.rightCol}>
+
+            {hasTech && (
+              <div className={styles.colSection}>
+                <h2 className={styles.sectionLabel}>Tech Stack</h2>
+                <div className={styles.techGrid}>
+                  {profile.techStack!.map(cat => (
+                    <div key={cat.category} className={styles.techRow}>
+                      <span
+                        className={styles.techCategoryLabel}
+                        style={{ '--cat-color': cat.color } as React.CSSProperties}
+                      >
+                        {cat.category}
+                      </span>
+                      <div className={styles.techItems}>
+                        {cat.items.map(item => (
+                          <span
+                            key={item}
+                            className={styles.techPill}
+                            style={{ '--pill-color': cat.color } as React.CSSProperties}
+                          >
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {hasLangs && (
-              <section className={styles.leftCol}>
+              <div className={styles.colSection}>
                 <h2 className={styles.sectionLabel}>Languages</h2>
                 <div className={styles.langsList}>
                   {profile.languages!.map(lang => (
@@ -160,12 +223,11 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
                     </div>
                   ))}
                 </div>
-              </section>
+              </div>
             )}
 
             {hasCerts && (
-              <section className={styles.rightCol}>
-                {/* Header row: label + pagination controls */}
+              <div className={styles.colSection}>
                 <div className={styles.sectionHeaderRow}>
                   <h2 className={styles.sectionLabel}>Certifications</h2>
                   {totalCertPages > 1 && (
@@ -175,9 +237,7 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
                         onClick={() => setCertPage(p => p - 1)}
                         disabled={certPage === 0}
                         aria-label="Previous page"
-                      >
-                        ←
-                      </button>
+                      >←</button>
                       <span className={styles.certPageInfo}>
                         {certPage + 1} / {totalCertPages}
                       </span>
@@ -186,19 +246,17 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
                         onClick={() => setCertPage(p => p + 1)}
                         disabled={certPage === totalCertPages - 1}
                         aria-label="Next page"
-                      >
-                        →
-                      </button>
+                      >→</button>
                     </div>
                   )}
                 </div>
 
-                {/* 2×2 cert grid */}
+                {/* key = page-offset index — avoids collisions from duplicate cert names */}
                 <div className={styles.certPageGrid}>
-                  {visibleCerts.map(cert =>
+                  {visibleCerts.map((cert, i) =>
                     cert.url ? (
                       <a
-                        key={cert.name + cert.url}
+                        key={certPage * CERTS_PER_PAGE + i}
                         href={cert.url}
                         target="_blank"
                         rel="noreferrer"
@@ -211,7 +269,7 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
                         <span className={styles.certLinkIcon}><ExternalLinkIcon /></span>
                       </a>
                     ) : (
-                      <div key={cert.name} className={`${styles.certCard} ${styles.certCardNoLink}`}>
+                      <div key={certPage * CERTS_PER_PAGE + i} className={`${styles.certCard} ${styles.certCardNoLink}`}>
                         <span className={styles.certName}>{cert.name}</span>
                         <span className={styles.certMeta}>
                           {cert.issuer}{cert.year ? ` · ${cert.year}` : ''}
@@ -220,62 +278,11 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
                     )
                   )}
                 </div>
-              </section>
+              </div>
             )}
 
           </div>
-        )}
-
-        {/* ── Live demos ── */}
-        {liveModules.length > 0 && (
-          <section className={styles.fullRow}>
-            <h2 className={styles.sectionLabel}>Live demos</h2>
-            <div className={styles.moduleGrid}>
-              {liveModules.map(m => (
-                <button key={m.id} className={styles.moduleCard} onClick={() => onNavigate(m.id)}>
-                  <div className={styles.moduleCardTop}>
-                    <span className={styles.moduleCardLabel}>{m.label}</span>
-                    <span className={styles.liveChip}>live</span>
-                  </div>
-                  {m.description && <p className={styles.moduleCardDesc}>{m.description}</p>}
-                  {m.stack && m.stack.length > 0 && (
-                    <div className={styles.moduleCardStack}>
-                      {m.stack.map(s => (
-                        <span
-                          key={s.name}
-                          className={styles.stackPill}
-                          style={{ '--pill-color': s.color || '#3b82f6' } as React.CSSProperties}
-                        >
-                          {s.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className={styles.moduleCardCta}>Open demo <ArrowIcon /></div>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── Coming soon ── */}
-        {soonModules.length > 0 && (
-          <section className={styles.fullRow}>
-            <h2 className={styles.sectionLabel}>Coming soon</h2>
-            <div className={styles.moduleGrid}>
-              {soonModules.map(m => (
-                <div key={m.id} className={`${styles.moduleCard} ${styles.moduleCardDim}`}>
-                  <div className={styles.moduleCardTop}>
-                    <span className={styles.moduleCardLabel}>{m.label}</span>
-                    <span className={styles.soonChip}>soon</span>
-                  </div>
-                  {m.description && <p className={styles.moduleCardDesc}>{m.description}</p>}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
+        </div>
       </div>
     </div>
   );
