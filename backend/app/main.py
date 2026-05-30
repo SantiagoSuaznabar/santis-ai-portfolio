@@ -20,6 +20,7 @@ from app.models.schemas import (
     SessionHistoryResponse, HistoryMessage,
     CacheEntry, CacheListResponse, CacheDeleteResponse,
 )
+from app.agent.agent_route import router as agent_router
 from app.services.llm_service import llm_service
 from app.services.qdrant_service import qdrant_service, SCORE_THRESHOLD
 from app.services.redis_service import redis_service, _cosine_similarity
@@ -54,7 +55,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+app.include_router(agent_router)
 TOP_K = 5
 
 # ── SSE helpers ───────────────────────────────────────────────────────────────
