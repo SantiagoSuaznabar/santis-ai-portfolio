@@ -1,10 +1,25 @@
+import { useState } from 'react';
 import type { FC } from 'react';
 import styles from './Profile.module.css';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface TechCategory {
   category: string;
   color: string;
   items: string[];
+}
+
+interface Language {
+  name: string;
+  level: string;
+}
+
+interface Certification {
+  name: string;
+  issuer: string;
+  year?: string;
+  url?: string;
 }
 
 interface ProfileData {
@@ -16,6 +31,8 @@ interface ProfileData {
   email?: string;
   avatar?: string;
   techStack?: TechCategory[];
+  languages?: Language[];
+  certifications?: Certification[];
 }
 
 interface Module {
@@ -32,9 +49,26 @@ interface Props {
   onNavigate: (id: string) => void;
 }
 
+const CERTS_PER_PAGE = 4;
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
+  const [certPage, setCertPage] = useState(0);
+
   const liveModules = modules.filter(m => m.status === 'live');
   const soonModules = modules.filter(m => m.status === 'coming-soon');
+
+  const hasTech  = (profile.techStack?.length   ?? 0) > 0;
+  const hasLangs = (profile.languages?.length   ?? 0) > 0;
+  const hasCerts = (profile.certifications?.length ?? 0) > 0;
+
+  const totalCertPages = hasCerts
+    ? Math.ceil(profile.certifications!.length / CERTS_PER_PAGE)
+    : 0;
+  const visibleCerts = hasCerts
+    ? profile.certifications!.slice(certPage * CERTS_PER_PAGE, (certPage + 1) * CERTS_PER_PAGE)
+    : [];
 
   return (
     <div className={styles.page}>
@@ -58,78 +92,152 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
           <div className={styles.links}>
             {profile.github && (
               <a href={profile.github} target="_blank" rel="noreferrer" className={styles.link}>
-                <GithubIcon />
-                <span>GitHub</span>
+                <GithubIcon /><span>GitHub</span>
               </a>
             )}
             {profile.linkedin && (
               <a href={profile.linkedin} target="_blank" rel="noreferrer" className={styles.link}>
-                <LinkedinIcon />
-                <span>LinkedIn</span>
+                <LinkedinIcon /><span>LinkedIn</span>
               </a>
             )}
             {profile.email && (
               <a href={`mailto:${profile.email}`} className={styles.link}>
-                <MailIcon />
-                <span>{profile.email}</span>
+                <MailIcon /><span>{profile.email}</span>
               </a>
             )}
           </div>
         </section>
 
-        {/* ── Bio ── */}
-        <section className={styles.bioSection}>
-          <p className={styles.bio}>{profile.bio}</p>
-        </section>
-
-        {/* ── Tech Stack ── */}
-        {profile.techStack && profile.techStack.length > 0 && (
-          <section className={styles.section}>
-            <h2 className={styles.sectionLabel}>Tech Stack</h2>
-            <div className={styles.techGrid}>
-              {profile.techStack.map(cat => (
-                <div key={cat.category} className={styles.techRow}>
-                  <span
-                    className={styles.techCategoryLabel}
-                    style={{ '--cat-color': cat.color } as React.CSSProperties}
-                  >
-                    {cat.category}
-                  </span>
-                  <div className={styles.techItems}>
-                    {cat.items.map(item => (
-                      <span
-                        key={item}
-                        className={styles.techPill}
-                        style={{ '--pill-color': cat.color } as React.CSSProperties}
-                      >
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+        {/* ── Row 1: Bio + Tech Stack ── */}
+        <div className={styles.twoColRow}>
+          <section className={styles.leftCol}>
+            <h2 className={styles.sectionLabel}>About</h2>
+            <p className={styles.bio}>{profile.bio}</p>
           </section>
+
+          {hasTech && (
+            <section className={styles.rightCol}>
+              <h2 className={styles.sectionLabel}>Tech Stack</h2>
+              <div className={styles.techGrid}>
+                {profile.techStack!.map(cat => (
+                  <div key={cat.category} className={styles.techRow}>
+                    <span
+                      className={styles.techCategoryLabel}
+                      style={{ '--cat-color': cat.color } as React.CSSProperties}
+                    >
+                      {cat.category}
+                    </span>
+                    <div className={styles.techItems}>
+                      {cat.items.map(item => (
+                        <span
+                          key={item}
+                          className={styles.techPill}
+                          style={{ '--pill-color': cat.color } as React.CSSProperties}
+                        >
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+
+        {/* ── Row 2: Languages + Certifications ── */}
+        {(hasLangs || hasCerts) && (
+          <div className={styles.twoColRow}>
+
+            {hasLangs && (
+              <section className={styles.leftCol}>
+                <h2 className={styles.sectionLabel}>Languages</h2>
+                <div className={styles.langsList}>
+                  {profile.languages!.map(lang => (
+                    <div key={lang.name} className={styles.langItem}>
+                      <span className={styles.langName}>{lang.name}</span>
+                      <span className={styles.langLevel}>{lang.level}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {hasCerts && (
+              <section className={styles.rightCol}>
+                {/* Header row: label + pagination controls */}
+                <div className={styles.sectionHeaderRow}>
+                  <h2 className={styles.sectionLabel}>Certifications</h2>
+                  {totalCertPages > 1 && (
+                    <div className={styles.certPagination}>
+                      <button
+                        className={styles.certPageBtn}
+                        onClick={() => setCertPage(p => p - 1)}
+                        disabled={certPage === 0}
+                        aria-label="Previous page"
+                      >
+                        ←
+                      </button>
+                      <span className={styles.certPageInfo}>
+                        {certPage + 1} / {totalCertPages}
+                      </span>
+                      <button
+                        className={styles.certPageBtn}
+                        onClick={() => setCertPage(p => p + 1)}
+                        disabled={certPage === totalCertPages - 1}
+                        aria-label="Next page"
+                      >
+                        →
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2×2 cert grid */}
+                <div className={styles.certPageGrid}>
+                  {visibleCerts.map(cert =>
+                    cert.url ? (
+                      <a
+                        key={cert.name + cert.url}
+                        href={cert.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={styles.certCard}
+                      >
+                        <span className={styles.certName}>{cert.name}</span>
+                        <span className={styles.certMeta}>
+                          {cert.issuer}{cert.year ? ` · ${cert.year}` : ''}
+                        </span>
+                        <span className={styles.certLinkIcon}><ExternalLinkIcon /></span>
+                      </a>
+                    ) : (
+                      <div key={cert.name} className={`${styles.certCard} ${styles.certCardNoLink}`}>
+                        <span className={styles.certName}>{cert.name}</span>
+                        <span className={styles.certMeta}>
+                          {cert.issuer}{cert.year ? ` · ${cert.year}` : ''}
+                        </span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </section>
+            )}
+
+          </div>
         )}
 
-        {/* ── Live modules ── */}
+        {/* ── Live demos ── */}
         {liveModules.length > 0 && (
-          <section className={styles.section}>
+          <section className={styles.fullRow}>
             <h2 className={styles.sectionLabel}>Live demos</h2>
             <div className={styles.moduleGrid}>
               {liveModules.map(m => (
-                <button
-                  key={m.id}
-                  className={styles.moduleCard}
-                  onClick={() => onNavigate(m.id)}
-                >
+                <button key={m.id} className={styles.moduleCard} onClick={() => onNavigate(m.id)}>
                   <div className={styles.moduleCardTop}>
                     <span className={styles.moduleCardLabel}>{m.label}</span>
                     <span className={styles.liveChip}>live</span>
                   </div>
-                  {m.description && (
-                    <p className={styles.moduleCardDesc}>{m.description}</p>
-                  )}
+                  {m.description && <p className={styles.moduleCardDesc}>{m.description}</p>}
                   {m.stack && m.stack.length > 0 && (
                     <div className={styles.moduleCardStack}>
                       {m.stack.map(s => (
@@ -143,9 +251,7 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
                       ))}
                     </div>
                   )}
-                  <div className={styles.moduleCardCta}>
-                    Open demo <ArrowIcon />
-                  </div>
+                  <div className={styles.moduleCardCta}>Open demo <ArrowIcon /></div>
                 </button>
               ))}
             </div>
@@ -154,7 +260,7 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
 
         {/* ── Coming soon ── */}
         {soonModules.length > 0 && (
-          <section className={styles.section}>
+          <section className={styles.fullRow}>
             <h2 className={styles.sectionLabel}>Coming soon</h2>
             <div className={styles.moduleGrid}>
               {soonModules.map(m => (
@@ -163,9 +269,7 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
                     <span className={styles.moduleCardLabel}>{m.label}</span>
                     <span className={styles.soonChip}>soon</span>
                   </div>
-                  {m.description && (
-                    <p className={styles.moduleCardDesc}>{m.description}</p>
-                  )}
+                  {m.description && <p className={styles.moduleCardDesc}>{m.description}</p>}
                 </div>
               ))}
             </div>
@@ -179,7 +283,8 @@ const Profile: FC<Props> = ({ profile, modules, onNavigate }) => {
 
 export default Profile;
 
-// ── Inline icons ──────────────────────────────────────────────────────────────
+// ── Icons ─────────────────────────────────────────────────────────────────────
+
 function GithubIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
@@ -209,6 +314,16 @@ function ArrowIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  );
+}
+
+function ExternalLinkIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+      <polyline points="15 3 21 3 21 9"/>
+      <line x1="10" y1="14" x2="21" y2="3"/>
     </svg>
   );
 }

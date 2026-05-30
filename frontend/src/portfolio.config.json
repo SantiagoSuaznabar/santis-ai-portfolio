@@ -33,6 +33,114 @@
         "color": "#3b82f6",
         "items": ["Git", "Github", "Docker", "Docker Swarm", "Github Actions"]
       }
+    ],
+        "languages": [
+      { "name": "Spanish", "level": "Native" },
+      { "name": "English", "level": "Professional" }
+    ],
+    "certifications": [
+      {
+        "name": "Natural Language Processing Specialization",
+        "issuer": "DeepLearning.AI",
+        "year": "2026",
+        "url": "https://learn.deeplearning.ai/certificates/d2b149b0-01f2-48dd-89d7-de08185a54ed?usp=sharing"
+      },
+      {
+        "name": "Semantic Caching for AI Agents",
+        "issuer": "DeepLearning.AI",
+        "year": "2026",
+        "url": "https://learn.deeplearning.ai/accomplishments/f7f4fcc7-e39a-4625-86f7-86bd47a06f6f"
+      },
+      {
+        "name": "Safe and reliable AI via guardrails",
+        "issuer": "DeepLearning.AI",
+        "year": "2026",
+        "url": "https://learn.deeplearning.ai/accomplishments/053aa0e8-a908-4a9a-a8eb-4f5d2b106a06"
+      },
+      {
+        "name": "Pydantic for LLM Workflows",
+        "issuer": "DeepLearning.AI",
+        "year": "2026",
+        "url": "https://learn.deeplearning.ai/accomplishments/86283710-78cb-4335-8e0b-a90b1bf6bb15"
+      },
+      {
+        "name": "Long-Term Agentic Memory With LangGraph",
+        "issuer": "DeepLearning.AI",
+        "year": "2026",
+        "url": "https://learn.deeplearning.ai/accomplishments/a5062934-b501-4910-9409-17788691d4f6"
+      },
+      {
+        "name": "Introduction to Model Context Protocol",
+        "issuer": "Anthropic",
+        "year": "2026",
+        "url": "https://verify.skilljar.com/c/kjrh6bj9noag"
+      },
+      {
+        "name": "Qdrant Multi-Vector Search",
+        "issuer": "Qdrant",
+        "year": "2026",
+        "url": "https://train.qdrant.dev/certificate/QDRANT-CA858486"
+      },
+      {
+        "name": "Qdrant Essentials",
+        "issuer": "Qdrant",
+        "year": "2026",
+        "url": "https://train.qdrant.dev/certificate/QDRANT-4C2E6D67"
+      },
+      {
+        "name": "Foundation: Monitoring Production Agents",
+        "issuer": "LangChain",
+        "year": "2026",
+        "url": "https://academy.langchain.com/certificates/m94ttjigwg"
+      },
+      {
+        "name": "Foundation: Introduction to Agent Observability & Evaluations",
+        "issuer": "LangChain",
+        "year": "2026",
+        "url": "https://academy.langchain.com/certificates/txju2zeyjg"
+      },
+      {
+        "name": "Full Stack Generative and Agentic AI with Python",
+        "issuer": "Udemy",
+        "year": "2026",
+        "url": "https://www.udemy.com/certificate/UC-f75011b0-d1ec-49b8-96c0-e555499b007a/"
+      },
+      {
+        "name": "Project: Deep Research with LangGraph",
+        "issuer": "LangChain",
+        "year": "2026",
+        "url": "https://academy.langchain.com/certificates/g7idrhlpxz"
+      },
+      {
+        "name": " Quickstart: LangGraph Essentials - Python",
+        "issuer": "LangChain",
+        "year": "2026",
+        "url": "https://academy.langchain.com/certificates/0dqxshnbm4"
+      },
+      {
+        "name": " Foundation: Introduction to LangGraph - Python",
+        "issuer": "LangChain",
+        "year": "2026",
+        "url": "https://academy.langchain.com/certificates/z9waxwsyum"
+      },
+      {
+        "name": "Project: Deep Agents",
+        "issuer": "LangChain",
+        "year": "2026",
+        "url": "https://academy.langchain.com/certificates/skbwtxledz"
+      },
+      {
+        "name": "Hugging Face Agents Course",
+        "issuer": "Hugging Face",
+        "year": "2026",
+        "url": "https://huggingface.co/datasets/agents-course/final-certificates/resolve/main/certificates/santi-suaz/2026-04-13.png"
+      },
+      {
+        "name": "AI Agents Fundamentals",
+        "issuer": "Hugging Face",
+        "year": "2026",
+        "url": "https://huggingface.co/datasets/agents-course/certificates/resolve/main/certificates/santi-suaz/2026-04-12.png"
+      }
     ]
   },
   "modules": [

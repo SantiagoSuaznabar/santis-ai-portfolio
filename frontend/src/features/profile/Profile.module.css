@@ -1,3 +1,4 @@
+/* ─── Page shell ──────────────────────────────────────────── */
 .page {
   flex: 1;
   overflow-y: auto;
@@ -5,15 +6,16 @@
   scrollbar-color: var(--border) transparent;
   background: var(--bg-base);
 }
+.page::-webkit-scrollbar        { width: 4px; }
+.page::-webkit-scrollbar-track  { background: transparent; }
+.page::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 2px; }
 
-.page::-webkit-scrollbar { width: 4px; }
-.page::-webkit-scrollbar-track { background: transparent; }
-.page::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
+/* ─── Inner container ─────────────────────────────────────── */
 .inner {
-  max-width: 700px;
+  width: 100%;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 56px 32px 80px;
+  padding: 48px 48px 80px;
   display: flex;
   flex-direction: column;
   gap: 48px;
@@ -26,18 +28,63 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Hero ── */
+/* ─── Layout primitives ───────────────────────────────────── */
+.twoColRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 56px;
+  align-items: start;
+}
+
+/* Single child spans both columns */
+.twoColRow > *:only-child { grid-column: 1 / -1; }
+
+.leftCol,
+.rightCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.leftCol {
+  border-right: 1px solid var(--border-subtle);
+  padding-right: 56px;
+}
+
+.fullRow {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ─── Section label ───────────────────────────────────────── */
+.sectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Label + inline controls on the same row */
+.sectionHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ─── Hero ────────────────────────────────────────────────── */
 .hero {
   display: flex;
   align-items: center;
   gap: 24px;
   flex-wrap: wrap;
+  padding-bottom: 48px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.avatarWrap {
-  position: relative;
-  flex-shrink: 0;
-}
+.avatarWrap  { position: relative; flex-shrink: 0; }
 
 .avatarImg,
 .avatarFallback {
@@ -46,10 +93,7 @@
   border-radius: 18px;
   border: 1px solid var(--border);
 }
-
-.avatarImg {
-  object-fit: cover;
-}
+.avatarImg { object-fit: cover; }
 
 .avatarFallback {
   background: linear-gradient(135deg, #1d4ed8, #7c3aed);
@@ -64,20 +108,15 @@
 
 .availableDot {
   position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 14px;
-  height: 14px;
+  bottom: -2px; right: -2px;
+  width: 14px; height: 14px;
   border-radius: 50%;
   background: var(--green);
   border: 2px solid var(--bg-base);
   box-shadow: 0 0 6px rgba(16,185,129,0.6);
 }
 
-.heroText {
-  flex: 1;
-  min-width: 180px;
-}
+.heroText { flex: 1; min-width: 180px; }
 
 .name {
   font-size: 28px;
@@ -95,12 +134,7 @@
   letter-spacing: 0.02em;
 }
 
-.links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
+.links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 .link {
   display: inline-flex;
@@ -116,45 +150,210 @@
   text-decoration: none;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
-
 .link:hover {
   color: var(--text-primary);
   border-color: rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.04);
 }
 
-/* ── Bio ── */
-.bioSection {
-  border-left: 2px solid var(--border);
-  padding-left: 20px;
-}
-
+/* ─── Bio ─────────────────────────────────────────────────── */
 .bio {
   font-size: 15px;
-  line-height: 1.75;
+  line-height: 1.8;
   color: var(--text-secondary);
 }
 
-/* ── Sections ── */
-.section {
+/* ─── Tech Stack ──────────────────────────────────────────── */
+/* Vertical layout: category label on top, pills below.        */
+/* Handles any category name length cleanly.                   */
+.techGrid {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
 }
 
-.sectionLabel {
+.techRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.techRow:last-child { border-bottom: none; }
+
+.techCategoryLabel {
   font-family: var(--font-mono);
   font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--cat-color, var(--text-faint));
 }
 
-/* ── Module cards ── */
+.techItems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.techPill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--pill-color, #3b82f6) 10%, transparent);
+  color: var(--pill-color, #3b82f6);
+  border: 1px solid color-mix(in srgb, var(--pill-color, #3b82f6) 22%, transparent);
+  transition: background 0.15s, border-color 0.15s;
+}
+.techPill:hover {
+  background: color-mix(in srgb, var(--pill-color, #3b82f6) 18%, transparent);
+  border-color: color-mix(in srgb, var(--pill-color, #3b82f6) 35%, transparent);
+}
+
+/* ─── Languages ───────────────────────────────────────────── */
+.langsList { display: flex; flex-direction: column; gap: 8px; }
+
+.langItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.langName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.langLevel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: #93c5fd;
+  border: 1px solid rgba(59,130,246,0.2);
+}
+
+/* ─── Certifications ──────────────────────────────────────── */
+
+/* Pagination controls — inline with the section label */
+.certPagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.certPageBtn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+.certPageBtn:not(:disabled):hover {
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+}
+.certPageBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.certPageInfo {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 28px;
+  text-align: center;
+}
+
+/* 2×2 grid */
+.certPageGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.certCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 12px 12px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 76px;
+}
+
+a.certCard:hover {
+  border-color: rgba(59,130,246,0.35);
+  background: rgba(59,130,246,0.04);
+}
+
+a.certCard:hover .certName { color: var(--accent); }
+
+.certCardNoLink { cursor: default; }
+
+.certName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.45;
+  /* Clamp to 3 lines max so cards stay uniform */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color 0.15s;
+  /* leave room for link icon */
+  padding-right: 18px;
+}
+
+.certMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* External link icon: top-right corner */
+.certLinkIcon {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+a.certCard:hover .certLinkIcon { color: var(--accent); }
+
+/* ─── Module cards ────────────────────────────────────────── */
 .moduleGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
 }
 
@@ -171,17 +370,12 @@
   transition: border-color 0.15s, background 0.15s, transform 0.15s;
   font-family: var(--font-sans);
 }
-
 .moduleCard:hover:not(.moduleCardDim) {
   border-color: rgba(59,130,246,0.3);
   background: rgba(59,130,246,0.03);
   transform: translateY(-1px);
 }
-
-.moduleCardDim {
-  opacity: 0.45;
-  cursor: default;
-}
+.moduleCardDim { opacity: 0.45; cursor: default; }
 
 .moduleCardTop {
   display: flex;
@@ -228,11 +422,7 @@
   line-height: 1.6;
 }
 
-.moduleCardStack {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
+.moduleCardStack { display: flex; flex-wrap: wrap; gap: 5px; }
 
 .stackPill {
   font-family: var(--font-mono);
@@ -254,70 +444,29 @@
   margin-top: 2px;
 }
 
-/* ── Mobile ── */
+/* ─── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .inner { padding: 32px 18px 60px; gap: 36px; }
-  .hero { gap: 16px; }
+  .inner {
+    padding: 32px 18px 60px;
+    gap: 36px;
+  }
+
+  .twoColRow {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+
+  /* On mobile the right border becomes a bottom border */
+  .leftCol {
+    border-right: none;
+    padding-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 36px;
+  }
+
+  .hero { padding-bottom: 32px; }
   .name { font-size: 22px; }
-  .moduleGrid { grid-template-columns: 1fr; }
-}
-/* ─── Tech Stack ──────────────────────────────────────────── */
-.techGrid {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 
-.techRow {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.techCategoryLabel {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--cat-color, var(--text-faint));
-  width: 76px;
-  flex-shrink: 0;
-  padding-top: 4px;
-  line-height: 1;
-}
-
-.techItems {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  flex: 1;
-}
-
-.techPill {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--pill-color, #3b82f6) 10%, transparent);
-  color: var(--pill-color, #3b82f6);
-  border: 1px solid color-mix(in srgb, var(--pill-color, #3b82f6) 22%, transparent);
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.techPill:hover {
-  background: color-mix(in srgb, var(--pill-color, #3b82f6) 18%, transparent);
-  border-color: color-mix(in srgb, var(--pill-color, #3b82f6) 35%, transparent);
-}
-
-/* ── Mobile ── */
-@media (max-width: 480px) {
-  .techRow {
-    flex-direction: column;
-    gap: 8px;
-  }
-  .techCategoryLabel {
-    width: auto;
-    padding-top: 0;
-  }
+  .certPageGrid { grid-template-columns: 1fr; }
+  .moduleGrid   { grid-template-columns: 1fr; }
 }
